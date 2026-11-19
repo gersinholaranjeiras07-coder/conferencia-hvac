@@ -179,3 +179,20 @@
 .cf #pickcard .pk-chip{background:var(--soft);color:var(--text);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600}
 .cf #pickcard .pk-chip.c{background:var(--blue);color:#fff}
 .cf #pickcard .pk-chip.g{font-weight:500;color:var(--muted)}
+.cf #hlnote .hl-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;max-height:96px;overflow:auto}
+.cf #hlnote .hl-go{background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;text-decoration:none;color:var(--text)}
+.cf #roomSel{max-width:240px}
+.hl-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.hl-go{background:var(--soft,#eef3fb);border:1px solid var(--line,#d5deec);border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;text-decoration:none;color:var(--text,#0a2a52)}
+.cf .grp-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.cf .grp-bar label{display:flex;gap:8px;align-items:center;font-weight:600;cursor:pointer;margin:0}
+.cf table.tbl-it tr.grp td{background:var(--soft);padding:9px 14px;border-top:2px solid var(--line);font-size:13px;letter-spacing:.01em}
+.cf .cat-pill{background:var(--soft);border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;white-space:nowrap}
+.cf .cad-sum{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px;padding:12px;border-radius:12px;background:var(--soft)}
+.cf .cad-n{display:flex;flex-direction:column;align-items:center;min-width:84px}.cf .cad-n b{font-size:26px;color:var(--blue);line-height:1}.cf .cad-n span{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.cf .cad-chips,.cf .cad-tags{display:flex;gap:6px;flex-wrap:wrap}
+.cf .cad-list{max-height:220px;overflow:auto;margin-top:10px;border:1px solid var(--line);border-radius:10px}
+.cf .cad-r{display:flex;justify-content:space-between;gap:10px;padding:7px 12px;border-bottom:1px solid var(--line);font-size:13px}.cf .cad-r:last-child{border:0}
+.cf .cad-tags .pk-chip,.cf .cad-chips .pk-chip{background:var(--soft);color:var(--text);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600}
+.cf .cad-chips .pk-chip.c{background:var(--blue);color:#fff}
+.cf .mbox .pk-l{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:12px 0 6px}

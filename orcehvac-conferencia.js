@@ -330,7 +330,7 @@ function viewerUpdate(){
   <span class="sp"></span>
   ${STORDER.map(k=>`<span class="chip s-${k} fchip ${ui.stFilter.has(k)?'on':''}" data-act="stf" data-k="${k}" title="Mostrar/ocultar">${ST[k]} ${cnt[k]}</span>`).join('')}
   <select data-chg="catF"><option value="">Todas as categorias</option>${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${ui.catFilter===k?'selected':''}>${c.l}</option>`).join('')}</select>
-  <button class="btn sec sm" data-act="sideT">☰ Lista</button>${p.tipo==='dxf'?'<input id="dxq" class="dxq" type="search" placeholder="Buscar texto no desenho…" value="'+esc(V.q||'')+'"><button class="btn sec sm" data-act="dxfList">🔎 Equipamentos do desenho</button>'+((docCache[p.id]?.clusters?.length||0)>1?`<button class="btn sec sm" data-act="dxfCl">🗺 Quadros (${docCache[p.id].clusters.length})</button>`:''):''}`;
+  <button class="btn sec sm" data-act="sideT">☰ Lista</button>${p.tipo==='dxf'?(docCache[p.id]?.rooms?.length?`<select id="roomSel" class="dxq" data-chg="roomF" title="Filtrar por ambiente"><option value="">Todos os ambientes (${docCache[p.id].rooms.length})</option>${roomOpts(docCache[p.id]).map(x=>`<option value="${x.i}" ${V.room===x.i?'selected':''}>${esc(x.r.n)} · ${String(x.r.A).replace('.',',')} m²</option>`).join('')}</select><button class="btn sec sm" data-act="roomList">📍 Por ambiente</button>`:'')+(Object.keys(docCache[p.id]?.kinds||{}).length?`<select id="ductSel" class="dxq" data-chg="ductF" title="Filtrar por tipo de duto"><option value="">Todos os dutos</option>${Object.keys(docCache[p.id].kinds).map(k=>`<option value="${k}" ${V.duct===k?'selected':''}>${esc(KINDS[k])}</option>`).join('')}</select><button class="btn sec sm" data-act="ductList">📏 Medidas dos dutos</button>`:'')+(mode==='escritorio'?'<button class="btn sm" data-act="dxfCad">➕ Cadastrar do desenho</button>':'')+'<input id="dxq" class="dxq" type="search" placeholder="Buscar texto no desenho…" value="'+esc(V.q||'')+'"><button class="btn sec sm" data-act="dxfList">🔎 Equipamentos do desenho</button>'+((docCache[p.id]?.clusters?.length||0)>1?`<button class="btn sec sm" data-act="dxfCl">🗺 Quadros (${docCache[p.id].clusters.length})</button>`:''):''}`;
  // marcadores
  const vis=here.filter(m=>{const it=item(m.itemId);return ui.stFilter.has(statusOf(it.id))&&(!ui.catFilter||it.cat===ui.catFilter)});
  const mk=$('#mks');if(mk)mk.innerHTML=vis.map(m=>{const it=item(m.itemId),s=statusOf(it.id);
@@ -404,6 +404,65 @@ function clusterPts(pts){
  const cl=Array.from({length:nc},()=>({x0:1e308,y0:1e308,x1:-1e308,y1:-1e308,n:0}));
  for(const v of pts){const c=cl[comp.get(K(Math.floor((v[0]-ax)/s),Math.floor((v[1]-ay)/s)))];if(v[0]<c.x0)c.x0=v[0];if(v[0]>c.x1)c.x1=v[0];if(v[1]<c.y0)c.y0=v[1];if(v[1]>c.y1)c.y1=v[1];c.n++}
  cl.sort((a,b)=>b.n-a.n);const tot=pts.length;const keep=cl.filter(c=>c.n>=Math.max(5,tot*.003));return keep.length?keep:[cl[0]]}
+
+/* ===== AMBIENTES (salas): nome + área escrita no desenho, ex. "SUB-POSTO DE ENFERMAGEM" / "15.48m²" ===== */
+const AREA_RE=/^\s*(\d+(?:[.,]\d+)?)\s*m\s*[²2]\s*$/i;
+const NOT_NAME=/^\s*P\.?\s*D\.?\s*[=:]|\d\s*[x×]\s*\d|m\s*[³3]\s*\/\s*h|^[\d\s.,x×\/+-]+$|m\s*[²2]\s*$/i;
+function polyArea(p){let a=0;for(let i=0,n=p.length-1;i<n;i++)a+=p[i][0]*p[i+1][1]-p[i+1][0]*p[i][1];return Math.abs(a)/2}
+function inPoly(p,x,y){let c=false;for(let i=0,j=p.length-1;i<p.length;j=i++){const a=p[i],b=p[j];if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])c=!c}return c}
+function findRooms(prims){
+ const texts=prims.filter(q=>q.t==='t');
+ const eqW=[...Object.values(CATS).map(c=>normS(c.l)),...Object.keys(CATS)].filter(w=>w.length>=4);
+ const ok=s=>{const l=s.replace(/\s+/g,' ').trim();return l.length>=3&&/[a-zA-ZÀ-ú]{3}/.test(l)&&!NOT_NAME.test(l)&&!eqW.some(w=>normS(l).includes(w))};
+ const areaT=[],cand=[];
+ for(const t of texts){const ls=t.s.split('\n').map(x=>x.trim()).filter(Boolean);const ai=ls.findIndex(l=>AREA_RE.test(l));
+  if(ai>=0)areaT.push({t,A:parseFloat(ls[ai].match(AREA_RE)[1].replace(',','.')),own:ls.filter((l,i)=>i!==ai&&ok(l))});
+  else if(ok(t.s))cand.push(t)}
+ const rooms=[];
+ for(const a of areaT){if(!(a.A>0.5&&a.A<20000))continue;const t=a.t;let names=[...a.own],box={x0:t.x0,y0:t.y0,x1:t.x1,y1:t.y1};
+  if(!names.length){let cur=t,prevH=0;for(let k=0;k<3;k++){const h=cur.h||t.h,ext=2*h;let best=null,bd=1e308;const cy0=(cur.y0+cur.y1)/2;
+   for(const c of cand){if(c===cur)continue;const dy=(c.y0+c.y1)/2-cy0;if(dy<=0||dy>h*4.2+(cur.y1-cur.y0))continue;if(c.x1<cur.x0-ext||c.x0>cur.x1+ext)continue;if(k>0&&Math.abs(c.h-prevH)>prevH*.25)continue;
+    const d=dy+Math.abs(((c.x0+c.x1)-(cur.x0+cur.x1))/2)*.3;if(d<bd){bd=d;best=c}}
+   if(!best)break;names.unshift(best.s.replace(/\s+/g,' ').trim());prevH=best.h;cur=best;box={x0:Math.min(box.x0,best.x0),y0:Math.min(box.y0,best.y0),x1:Math.max(box.x1,best.x1),y1:Math.max(box.y1,best.y1)}}}
+  const n=names.join(' ').replace(/\s+/g,' ').trim()||'Ambiente sem nome';
+  rooms.push({n,A:a.A,cx:(t.x0+t.x1)/2,cy:(t.y0+t.y1)/2,lb:box,th:t.h,poly:null,pa:0})}
+ if(!rooms.length)return rooms;
+ // polígonos fechados que contêm o rótulo e têm área parecida com a área escrita
+ const polys=[];for(const q of prims){if(q.t!=='l'||q.p.length<4)continue;const a=q.p[0],b=q.p[q.p.length-1];if(Math.hypot(a[0]-b[0],a[1]-b[1])>1e-3)continue;polys.push(q)}
+ const cands=rooms.map(r=>{const o=[];for(const q of polys){if(r.cx<q.x0||r.cx>q.x1||r.cy<q.y0||r.cy>q.y1)continue;if(inPoly(q.p,r.cx,r.cy))o.push({q,a:polyArea(q.p)})}return o});
+ const FS=[1,1e4,1e6];let bf=0,bc=-1;FS.forEach((f,fi)=>{let c=0;rooms.forEach((r,i)=>{if(cands[i].some(x=>x.a>=r.A*f*.75&&x.a<=r.A*f*1.3))c++});if(c>bc){bc=c;bf=fi}});
+ const hs=rooms.map(r=>r.th).sort((a,b)=>a-b),mh=hs[hs.length>>1]||1;
+ const f=bc>=Math.max(2,rooms.length*.1)?FS[bf]:(mh<1?1:mh<30?1e4:1e6);
+ rooms.forEach((r,i)=>{let best=null,bd=1e308;for(const x of cands[i]){const rt=x.a/(r.A*f);if(rt<.75||rt>1.3)continue;const dv=Math.abs(Math.log(rt));if(dv<bd){bd=dv;best=x}}
+  const half=Math.sqrt(r.A*f)/2*1.1;
+  if(best){r.poly=best.q.p;r.pa=best.a;r.bb={x0:best.q.x0,y0:best.q.y0,x1:best.q.x1,y1:best.q.y1}}
+  else{r.pa=r.A*f;r.half=half;r.bb={x0:r.cx-half,y0:r.cy-half,x1:r.cx+half,y1:r.cy+half}}});
+ return rooms}
+function roomOf(d,x,y){const R=d.rooms;if(!R||!R.length)return -1;let best=-1,ba=1e308;
+ R.forEach((r,i)=>{if(r.poly&&x>=r.bb.x0&&x<=r.bb.x1&&y>=r.bb.y0&&y<=r.bb.y1&&r.pa<ba&&inPoly(r.poly,x,y)){ba=r.pa;best=i}});
+ if(best>=0)return best;let bd=1e308;
+ R.forEach((r,i)=>{if(r.poly)return;const dx=Math.abs(x-r.cx),dy=Math.abs(y-r.cy);if(dx<=r.half&&dy<=r.half){const dd=Math.hypot(dx,dy)/r.half;if(dd<bd){bd=dd;best=i}}});
+ if(best>=0)return best;
+ R.forEach((r,i)=>{if(r.poly)return;const dd=Math.hypot(x-r.cx,y-r.cy)/r.half;if(dd<=1.9&&dd<bd){bd=dd;best=i}});return best}
+
+/* ===== TIPOS DE DUTO (pela camada/cor do desenho) + medidas escritas (40x20, Ø250) ===== */
+const KINDS={insuf:'Insuflamento',ret:'Retorno',exaust:'Exaustão',ext:'Renovação de ar (ar externo)',gord:'Exaustão de gordura',flex:'Duto flexível'};
+function kindOfName(n){const k=normS(n);if(/gordur/.test(k))return'gord';if(/flexiv/.test(k))return'flex';if(!/duto|insufla|retorno|exaust|renova|externo/.test(k))return'';
+ if(/insufla/.test(k))return'insuf';if(/retorno/.test(k))return'ret';if(/exaust/.test(k))return'exaust';if(/externo|renova/.test(k))return'ext';return''}
+function segDist(x,y,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],L=dx*dx+dy*dy;let t=L?((x-a[0])*dx+(y-a[1])*dy)/L:0;t=Math.max(0,Math.min(1,t));return Math.hypot(x-a[0]-t*dx,y-a[1]-t*dy)}
+function ductScan(layers,prims){
+ const cm=new Map(),kc={};
+ for(const [n,L] of Object.entries(layers)){const k=kindOfName(L.name||n);if(!k||L.color==null)continue;const c=dxfColor(L.color);if(cm.has(c)&&cm.get(c)!==k)cm.set(c,'?');else cm.set(c,k);kc[k]=kc[k]||c}
+ const kinds={},dp=[];
+ for(const q of prims){if(q.t!=='l')continue;let k=kindOfName(q.ly);if(!k){const m=cm.get(q.c);if(m&&m!=='?')k=m}
+  if(k){q.k=k;kinds[k]=(kinds[k]||0)+1;kc[k]=kc[k]||q.c;dp.push(q)}}
+ const dims=[];
+ if(dp.length)for(const t of prims){if(t.t!=='t')continue;
+  for(const ln of t.s.split('\n')){const l=ln.trim(),m=l.match(/^(\d{1,4})\s*[xX×]\s*(\d{1,4})$/),o=l.match(/^[Øø]\s*(\d{2,4})$/);if(!m&&!o)continue;
+   const txt=m?m[1]+'×'+m[2]:'Ø'+o[1],tol=Math.max(t.h*2.5,1e-9),cx=(t.x0+t.x1)/2,cy=(t.y0+t.y1)/2;let best=null,bd=1e308;
+   for(const q of dp){if(t.x1+tol<q.x0||t.x0-tol>q.x1||t.y1+tol<q.y0||t.y0-tol>q.y1)continue;for(let i=1;i<q.p.length;i++){const dd=segDist(cx,cy,q.p[i-1],q.p[i]);if(dd<bd){bd=dd;best=q}}}
+   if(best&&bd<=tol)dims.push({txt,t,q:best,k:best.k,cx,cy,room:-1})}}
+ return{dims,kinds,kc}}
 function dxfPrepare(text,pl){
  const dxf=new DxfParser().parseSync(text);if(!dxf)throw new Error('DXF inválido');
  let raw={ins:new Map(),hatches:[],types:{}};try{raw=rawScan(text)}catch(e){console.warn('rawScan',e)}
@@ -476,7 +535,11 @@ function dxfPrepare(text,pl){
  const xrefs=Object.entries(dxf.blocks||{}).filter(([n,b])=>b&&b.xrefPath).map(([n,b])=>b.xrefPath||n);
  const unsup=Object.entries(raw.types).filter(([t])=>!SUP.has(t)).sort((a,b)=>b[1]-a[1]);
  const diag={model:modelE.length,paper:paperE.length,usedPaper,xrefs,unsup,nprims:prims.length,types:raw.types};
- return{prims,x0:ext.x0,y0:ext.y0,w:ext.w,h:ext.h,inserts,texts:prims.filter(q=>q.t==='t'),nIns:recs.length,diag,clusters};
+ let rooms=[];try{rooms=findRooms(prims)}catch(e){console.warn('rooms',e)}
+ let ds={dims:[],kinds:{},kc:{}};try{ds=ductScan(layers,prims)}catch(e){console.warn('duct',e)}
+ const R={prims,x0:ext.x0,y0:ext.y0,w:ext.w,h:ext.h,inserts,texts:prims.filter(q=>q.t==='t'),nIns:recs.length,diag,clusters,rooms,dims:ds.dims,kinds:ds.kinds,kc:ds.kc};
+ if(rooms.length)R.dims.forEach(m=>{m.room=roomOf(R,m.cx,m.cy)});
+ return R;
 }
 function dxfNote(d){
  $('#dxfnote')?.remove();if(!d||!d.diag)return;const g=d.diag,msg=[];
@@ -502,9 +565,9 @@ ACT.dxfSetCl=b=>{const p=V.p,n=S.marcas.filter(m=>m.plantaId===p.id).length;
  S.marcas=S.marcas.filter(m=>m.plantaId!==p.id);delete p.dxfExt;p.dxfV=2;p.dxfCl=+b.dataset.i;delete docCache[p.id];save();closeModal();loadPage().then(()=>viewerUpdate())};
 ACT.dxfList=()=>{const d=docCache[V?.p.id];if(!d||!d.inserts)return;
  const skip=n=>/^[*]|^A\$C|^_|^ARCH/i.test(n);
- const rows=[];d.inserts.forEach((r,i)=>{if(r.d>0||skip(r.name))return;const strs=insStrings(d,r);const its=matchItems(strs);rows.push({r,i,strs:strs.slice(0,3),its})});
+ const rows=[];d.inserts.forEach((r,i)=>{if(r.d>0||skip(r.name))return;const strs=insStrings(d,r);const its=matchItems(strs);rows.push({r,i,strs:strs.slice(0,3),its,rm:d.rooms&&d.rooms.length?roomOf(d,(r.x0+r.x1)/2,(r.y0+r.y1)/2):-1})});
  const grp=new Map();rows.forEach(x=>{(grp.get(x.r.name)||grp.set(x.r.name,[]).get(x.r.name)).push(x)});
- const html=[...grp.entries()].sort((a,b)=>b[1].length-a[1].length).map(([name,l])=>`<details ${grp.size<=6?'open':''}><summary><b>${esc(name)}</b> <span class="muted">× ${l.length}</span></summary>${l.slice(0,60).map(x=>`<div class="si" data-act="dxfGo" data-i="${x.i}"><span>${x.strs.length?esc(x.strs.join(' · ')):'<i class="muted">sem texto</i>'}</span>${x.its.length?`<span class="chip s-${statusOf(x.its[0].id)}">${esc(x.its[0].campos.tag)}</span>`:''}</div>`).join('')}${l.length>60?'<div class="muted">… mais '+(l.length-60)+'</div>':''}</details>`).join('');
+ const html=[...grp.entries()].sort((a,b)=>b[1].length-a[1].length).map(([name,l])=>`<details ${grp.size<=6?'open':''}><summary><b>${esc(name)}</b> <span class="muted">× ${l.length}</span></summary>${l.slice(0,60).map(x=>`<div class="si" data-act="dxfGo" data-i="${x.i}"><span>${x.strs.length?esc(x.strs.join(' · ')):'<i class="muted">sem texto</i>'}${x.rm>=0?` <span class="muted">· 📍 ${esc(d.rooms[x.rm].n)}</span>`:''}</span>${x.its.length?`<span class="chip s-${statusOf(x.its[0].id)}">${esc(x.its[0].campos.tag)}</span>`:''}</div>`).join('')}${l.length>60?'<div class="muted">… mais '+(l.length-60)+'</div>':''}</details>`).join('');
  openModal(`<h3>Blocos / equipamentos no desenho</h3><p class="muted">Clique em um item para ir até ele na planta.</p><div style="max-height:60vh;overflow:auto">${html||'<div class="muted">Nenhum bloco encontrado neste desenho.</div>'}</div><div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`)};
 ACT.dxfGo=b=>{const d=docCache[V.p.id],r=d.inserts[+b.dataset.i];if(!r)return;closeModal();
  const cx=(r.x0+r.x1)/2,cy=(r.y0+r.y1)/2,nx=(cx-d.x0)/d.w,ny=1-(cy-d.y0)/d.h,r2=$('#vp').getBoundingClientRect(),sc=Math.min(r2.width/(Math.max(r.x1-r.x0,1)*8),60);
@@ -514,18 +577,29 @@ ACT.dxfGo=b=>{const d=docCache[V.p.id],r=d.inserts[+b.dataset.i];if(!r)return;cl
  V.pickLbl=r.name+(strs[0]?' · '+strs[0]:'');showPick({title:V.pickLbl,name:r.name,layer:r.ly,strings:[...new Set(strs)].slice(0,8),items:matchItems(strs),tagAttr:r.attrs.find(a=>a.text)?.text});drawDxfSoon()};
 function ensureCv2(){const vp=$('#vp');if(!vp)return null;let c=$('#cv2');if(!c){c=document.createElement('canvas');c.id='cv2';c.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none';vp.insertBefore(c,vp.firstChild);$('#stage')?.classList.add('dxf')}return c}
 const normS=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
-function hlCompute(d){
- const cat=ui.catFilter?CATS[ui.catFilter]:null;if(!cat&&!V.q)return null;
- const qk=V.q?normS(V.q):'';
- const items=cat?projItens(V.p.projetoId).filter(i=>i.cat===ui.catFilter):[],ck=[...(cat?[normS(cat.l),ui.catFilter]:[]),...((cfg().kw&&cat&&cfg().kw[ui.catFilter])||[]).map(normS),...(qk?[qk]:[])].filter(c=>c.length>=2);
+const hlOn=()=>!!(ui.catFilter||V.q||V.room!=null||V.duct!=null);
+function collectEq(d,cats,qk){
+ const items=projItens(V.p.projetoId).filter(i=>cats.includes(i.cat));
+ const kwOf=k=>[normS(CATS[k].l),k,...((cfg().kw&&cfg().kw[k])||[]).map(normS)].filter(c=>c.length>=2);
+ const all=[...cats.flatMap(kwOf),...(qk?[qk]:[])].filter(c=>c.length>=2);
+ const catOf=str=>{const k=normS(str);return cats.find(c=>kwOf(c).some(w=>k.includes(w)))||''};
  const ik=items.map(i=>({i,k:tagKey(i.campos.tag)})).filter(x=>x.k.length>=2),hit=k=>ik.find(x=>k===x.k||(x.k.length>=3&&k.includes(x.k)&&k.length<=x.k.length+12));
  const out=[],used=new Set();
  d.inserts.forEach(r=>{if(r.d>0)return;const strs=insStrings(d,r);let it=null;for(const s of strs){const m=hit(tagKey(s));if(m){it=m.i;break}}
-  const byName=ck.some(c=>normS(r.name).includes(c));if(it||byName){out.push({r,it,label:it?it.campos.tag:(strs[0]||r.name)});if(it)used.add(it.id)}});
+  const byName=all.some(c=>normS(r.name).includes(c));if(it||byName){out.push({r,it,cat:it?it.cat:catOf(r.name+' '+strs.join(' ')),label:it?it.campos.tag:(strs[0]||r.name)});if(it)used.add(it.id)}});
  const tu=new Set();
- for(const t of d.texts){const m=hit(tagKey(t.s));if(m&&!used.has(m.i.id)){out.push({box:t,it:m.i,label:m.i.campos.tag});used.add(m.i.id);tu.add(t)}}
- for(const t of d.texts){if(tu.has(t))continue;const k=normS(t.s);if(ck.some(c=>k.includes(c))){const l=t.s.split('\n')[0].replace(/\s+/g,' ').trim();out.push({box:t,it:null,label:l.length>26?l.slice(0,25)+'…':l})}}
- return{list:out,items:items.length,found:used.size}}
+ for(const t of d.texts){const m=hit(tagKey(t.s));if(m&&!used.has(m.i.id)){out.push({box:t,it:m.i,cat:m.i.cat,label:m.i.campos.tag});used.add(m.i.id);tu.add(t)}}
+ for(const t of d.texts){if(tu.has(t))continue;const k=normS(t.s);if(all.some(c=>k.includes(c))){const l=t.s.split('\n')[0].replace(/\s+/g,' ').trim();out.push({box:t,it:null,cat:catOf(t.s),label:l.length>26?l.slice(0,25)+'…':l})}}
+ if(d.rooms&&d.rooms.length)for(const o of out){const b=o.r||o.box;o.room=roomOf(d,(b.x0+b.x1)/2,(b.y0+b.y1)/2)}
+ return{out,items:items.length,found:used.size}}
+function hlCompute(d){
+ const room=V.room!=null&&d.rooms?d.rooms[V.room]:null;
+ const cats=ui.catFilter?[ui.catFilter]:(room&&!V.q&&V.duct==null?Object.keys(CATS):[]);
+ if(!cats.length&&!V.q&&!room&&V.duct==null)return null;
+ const qk=V.q?normS(V.q):'';
+ const c=(cats.length||qk)?collectEq(d,cats,qk):{out:[],items:0,found:0};
+ const list=room?c.out.filter(o=>o.room===V.room):c.out;
+ return{list,items:c.items,found:c.found,room}}
 function drawHl(ctx,d,X,Y,sc){
  if(!V.hl)V.hl=hlCompute(d)||{list:[],items:0,found:0};const h=V.hl;
  for(const o of h.list){const b=o.r||o.box,pad=o.r?Math.max(b.x1-b.x0,b.y1-b.y0)*.3+5/sc:Math.min(b.y1-b.y0,b.x1-b.x0)*.12+2.5/sc;const col=o.it?STC[statusOf(o.it.id)]:'#1769e0';
@@ -535,13 +609,117 @@ function drawHl(ctx,d,X,Y,sc){
   if((b.x1-b.x0+2*pad)*sc<46)continue;
   ctx.font='700 12px Arial,sans-serif';const tw=ctx.measureText(o.label).width+12;ctx.fillStyle=col;ctx.beginPath();ctx.roundRect?ctx.roundRect(x,y-20,tw,18,5):ctx.rect(x,y-20,tw,18);ctx.fill();ctx.fillStyle='#fff';ctx.textBaseline='middle';ctx.fillText(o.label,x+6,y-11)}
  return h}
-function hlNote(h){let n=$('#hlnote');if(!h||!(ui.catFilter||V.q)){n?.remove();return}
+function hlNote(h){let n=$('#hlnote');if(!h||!hlOn()){n?.remove();return}
  if(!n){n=document.createElement('div');n.id='hlnote';$('#vp')?.append(n);['pointerdown','pointerup','wheel'].forEach(t=>n.addEventListener(t,e=>e.stopPropagation()))}
  const cat=ui.catFilter?CATS[ui.catFilter].l:'',kws=(cat&&cfg().kw&&cfg().kw[ui.catFilter])||[];
- const msg=h.list.length?`${cat?`Filtro <b>${esc(cat)}</b>: `:''}${V.q?`busca “${esc(V.q)}”: `:''}<b>${h.list.length}</b> destacado(s) no desenho${h.items?` · ${h.found} de ${h.items} item(ns) do projeto achados pela TAG`:''}.`
+ let msg,extra='';const dk=V.duct!=null?ductBlock(docCache[V.p.id]):null,only=V.duct!=null&&!ui.catFilter&&!V.q&&!h.room;
+ if(only){msg=dk.msg;extra=dk.extra}
+ else if(h.room){const by={};h.list.forEach(o=>{const k=o.cat?CATS[o.cat].l:'Outros';by[k]=(by[k]||0)+1});
+  msg=`📍 Ambiente <b>${esc(h.room.n)}</b> · ${String(h.room.A).replace('.',',')} m²${dk&&!cat&&!V.q?'':'<br>'+(h.list.length?`<b>${h.list.length}</b> equipamento(s)${cat?' de '+esc(cat):''} neste ambiente: ${Object.entries(by).map(([k,v])=>v+' '+esc(k)).join(' · ')}`:`Nenhum equipamento${cat?' de '+esc(cat):''}${V.q?' com “'+esc(V.q)+'”':''} identificado dentro deste ambiente.`)}`;
+  extra=h.list.slice(0,14).map((o,i)=>`<a href="#" class="hl-go" data-act="hlGo" data-i="${i}">${esc(o.label)}</a>`).join('');if(dk){msg+='<br>'+dk.msg;extra+=dk.extra}}
+ else msg=h.list.length?`${cat?`Filtro <b>${esc(cat)}</b>: `:''}${V.q?`busca “${esc(V.q)}”: `:''}<b>${h.list.length}</b> destacado(s) no desenho${h.items?` · ${h.found} de ${h.items} item(ns) do projeto achados pela TAG`:''}.`
   :`${cat?`Filtro <b>${esc(cat)}</b>: `:''}nada encontrado no desenho${V.q?` para “${esc(V.q)}”`:''}. Este DXF pode não ter essa palavra escrita; use a busca acima com o texto que aparece no desenho (ex.: FC, AR-04) e salve como palavra-chave.`;
- const key=msg+'|'+kws.join(',')+'|'+!!V.q;if(n.dataset.k===key)return;n.dataset.k=key;
- n.innerHTML=msg+(kws.length?`<div class="muted" style="margin-top:4px">Palavras-chave de ${esc(cat)}: ${kws.map(esc).join(', ')} <a href="#" data-act="kwClear">limpar</a></div>`:'')+(cat&&V.q?`<div style="margin-top:6px"><button class="btn sm" data-act="kwSave">Salvar “${esc(V.q)}” como palavra-chave de ${esc(cat)}</button></div>`:'')}
+ const key=msg+extra+'|'+kws.join(',')+'|'+!!V.q;if(n.dataset.k===key)return;n.dataset.k=key;
+ n.innerHTML=msg+(extra?`<div class="hl-list">${extra}</div>`:'')+(kws.length&&!h.room&&!only?`<div class="muted" style="margin-top:4px">Palavras-chave de ${esc(cat)}: ${kws.map(esc).join(', ')} <a href="#" data-act="kwClear">limpar</a></div>`:'')+(cat&&V.q&&!h.room&&!only?`<div style="margin-top:6px"><button class="btn sm" data-act="kwSave">Salvar “${esc(V.q)}” como palavra-chave de ${esc(cat)}</button></div>`:'')}
+
+function ductDims(d){return(d.dims||[]).filter(m=>m.k===V.duct&&(V.room==null||m.room===V.room))}
+function ductBlock(d){const dm=ductDims(d),col=d.kc[V.duct]||'#1769e0',nm=KINDS[V.duct];V.dl=[];const g=new Map();
+ dm.forEach(m=>{if(!g.has(m.txt)){V.dl.push(m);g.set(m.txt,{n:0,i:V.dl.length-1})}g.get(m.txt).n++});
+ const sc=V.room!=null?' dentro do ambiente <b>'+esc(d.rooms[V.room].n)+'</b>':'';
+ const msg=`<span style="color:${col};font-size:16px">■</span> Duto de <b>${esc(nm)}</b>${sc}: `+(dm.length?`<b>${dm.length}</b> medida(s) escrita(s) no desenho.`:'nenhuma medida escrita encontrada para este tipo de duto aqui.');
+ const extra=[...g.entries()].sort((a,b)=>b[1].n-a[1].n).slice(0,24).map(([t,v])=>`<a href="#" class="hl-go" data-act="dGo" data-i="${v.i}">${esc(t)}${v.n>1?' ×'+v.n:''}</a>`).join('');
+ return{msg,extra}}
+ACT.dGo=(b,e)=>{e?.preventDefault();const d=docCache[V.p.id],m=V.dl?.[+b.dataset.i];if(!d||!m)return;zoomBox(d,m.t.x0,m.t.y0,m.t.x1,m.t.y1,.12)};
+function drawDuct(ctx,d,X,Y,sc,vx0,vx1,vy0,vy1){if(V.duct==null)return;const k=V.duct,col=d.kc[k]||'#1769e0',r=V.room!=null&&d.rooms?d.rooms[V.room]:null;
+ ctx.save();if(r){ctx.beginPath();if(r.poly)r.poly.forEach((v,i)=>i?ctx.lineTo(X(v[0]),Y(v[1])):ctx.moveTo(X(v[0]),Y(v[1])));else ctx.rect(X(r.bb.x0),Y(r.bb.y1),(r.bb.x1-r.bb.x0)*sc,(r.bb.y1-r.bb.y0)*sc);ctx.clip()}
+ ctx.lineWidth=2.8;ctx.strokeStyle=col;ctx.beginPath();
+ for(const p of d.prims){if(p.k!==k||p.x1<vx0||p.x0>vx1||p.y1<vy0||p.y0>vy1)continue;const v=p.p;ctx.moveTo(X(v[0][0]),Y(v[0][1]));for(let i=1;i<v.length;i++)ctx.lineTo(X(v[i][0]),Y(v[i][1]))}
+ ctx.stroke();ctx.restore();
+ ctx.font='700 12px Arial,sans-serif';ctx.textBaseline='middle';ctx.textAlign='left';
+ for(const m of ductDims(d)){if(m.cx<vx0||m.cx>vx1||m.cy<vy0||m.cy>vy1)continue;const tw=ctx.measureText(m.txt).width+12,x=X(m.cx)-tw/2,y=Y(m.cy)-9;
+  ctx.fillStyle='#0a2a52';ctx.beginPath();ctx.roundRect?ctx.roundRect(x,y,tw,18,5):ctx.rect(x,y,tw,18);ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#fff';ctx.fillText(m.txt,x+6,y+9.5)}}
+CHG.ductF=b=>{V.duct=b.value||null;V.hl=null;const n=$('#hlnote');if(n)n.dataset.k='';drawDxfSoon()};
+ACT.ductList=()=>{const d=docCache[V?.p.id];if(!d)return;V.dl=[];
+ const html=Object.keys(d.kinds).map(k=>{const dm=d.dims.filter(m=>m.k===k),g=new Map();dm.forEach(m=>{if(!g.has(m.txt)){V.dl.push(m);g.set(m.txt,{n:0,i:V.dl.length-1,k})}g.get(m.txt).n++});
+  return`<div class="pk-l"><span style="color:${d.kc[k]||'#999'}">■</span> ${esc(KINDS[k])} · ${d.kinds[k]} trechos desenhados · ${dm.length} medida(s) escrita(s)</div><div class="hl-list" style="max-height:none">${[...g.entries()].sort((a,b)=>b[1].n-a[1].n).map(([t,v])=>`<a href="#" class="hl-go" data-act="dMod" data-k="${k}" data-i="${v.i}">${esc(t)}${v.n>1?' ×'+v.n:''}</a>`).join('')||'<span class="muted">sem medida escrita</span>'}</div>`}).join('');
+ openModal(`<h3>Dutos do desenho</h3><p class="muted">O tipo de cada duto vem da cor/camada do desenho. A medida é a escrita sobre o duto (em cm, padrão de projeto: largura × altura; Ø = diâmetro). Clique numa medida para ir até ela.</p><div style="max-height:60vh;overflow:auto">${html||'<div class="muted">Este DXF não tem camadas de duto identificáveis (insuflamento, retorno, exaustão, ar externo).</div>'}</div><div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`)};
+ACT.dMod=(b,e)=>{e?.preventDefault();const d=docCache[V.p.id],m=V.dl?.[+b.dataset.i];if(!m)return;closeModal();V.duct=b.dataset.k;V.hl=null;const sel=$('#ductSel');if(sel)sel.value=V.duct;const n=$('#hlnote');if(n)n.dataset.k='';zoomBox(d,m.t.x0,m.t.y0,m.t.x1,m.t.y1,.12)};
+
+/* ===== CADASTRAR EQUIPAMENTOS DIRETO DO DESENHO (difusor/grelha/damper… sem TAG) ===== */
+const STOPW=new Set(['DE','DA','DO','DAS','DOS','E','A','O','PARA','COM','EM']);
+function roomCode(n){const w=normS(n).toUpperCase().replace(/[^A-Z0-9 ]/g,' ').split(/\s+/).filter(x=>x&&!STOPW.has(x));if(!w.length)return'SA';
+ const num=w.filter(x=>/^\d+$/.test(x)),txt=w.filter(x=>!/^\d+$/.test(x));
+ return(txt.length===1?txt[0].slice(0,3):txt.slice(0,4).map(x=>x[0]).join(''))+num.join('')}
+const NOTE_RE=/prever|nota\b|observa|conforme|detalhe|desce\b|sobe\b/i;
+function planCad(d,cat,room){
+ const pid=V.p.id,cats=cat==='*'?Object.keys(CATS):[cat],c=collectEq(d,cats,'');
+ let list=c.out.filter(o=>!o.it&&o.cat);
+ list=list.filter(o=>{const t=o.box?o.box.s:insStrings(d,o.r).join('\n'),f=t.split('\n')[0];return f.length<=60&&!NOTE_RE.test(f)});
+ if(room!==''&&room!=null)list=list.filter(o=>o.room===+room);
+ const done=new Set(S.itens.filter(i=>i.projetoId===V.p.projetoId&&i.src).map(i=>i.src));
+ const rows=list.map(o=>{const b=o.r||o.box,cx=(b.x0+b.x1)/2,cy=(b.y0+b.y1)/2;return{o,cat:o.cat,cx,cy,src:'dxf:'+pid+':'+Math.round(cx*100)+','+Math.round(cy*100),room:o.room>=0?d.rooms[o.room]:null}});
+ const fresh=rows.filter(r=>!done.has(r.src));
+ fresh.sort((a,b)=>(!a.room-!b.room)||(a.room&&b.room?a.room.n.localeCompare(b.room.n,'pt-BR')||a.room.A-b.room.A:0)||Object.keys(CATS).indexOf(a.cat)-Object.keys(CATS).indexOf(b.cat)||b.cy-a.cy||a.cx-b.cx);
+ const used=new Set(projItens(V.p.projetoId).map(i=>String(i.campos.tag||'').toUpperCase())),cnt=new Map();
+ for(const r of fresh){const pre=CATS[r.cat].s,code=r.room?roomCode(r.room.n):'SA',key=pre+'-'+code;let n=cnt.get(key)||0,tag;do{n++;tag=key+'-'+String(n).padStart(2,'0')}while(used.has(tag));cnt.set(key,n);used.add(tag);r.tag=tag;
+  const txt=r.o.box?r.o.box.s:insStrings(d,r.o.r).join('\n'),pl=prettyLabel(txt),vm=txt.match(/(\d+(?:[.,]\d+)?)\s*m\s*[³3]\s*\/\s*h/i),P=CATS[r.cat].proj,cp={tag,pavimento:V.p.pav||'',modelo:pl.title,dimensoes:pl.dims[0]?pl.dims[0].replace(/[×X]/g,'x'):'',vazao:vm?vm[1]+' m³/h':'',fabricante:/trox/i.test(txt)?'Trox':'',quantidade:'1'};
+  if(r.room){cp.ambiente=r.room.n;cp.localizacao=r.room.n}
+  r.campos={};for(const k of P)if(cp[k])r.campos[k]=cp[k]}
+ return{rows,fresh,done:rows.length-fresh.length}}
+function cadModal(cat,room){const d=docCache[V.p.id];if(!d)return;const pl=planCad(d,cat,room);V.cadPlan={cat,pl};
+ const ro=d.rooms&&d.rooms.length?roomOpts(d):[];
+ const byCat={},byRoom=new Map();pl.fresh.forEach(r=>{byCat[r.cat]=(byCat[r.cat]||0)+1;const k=r.room?r.room.n:'Sem ambiente identificado';const m=byRoom.get(k)||{n:0,c:{}};m.n++;m.c[r.cat]=(m.c[r.cat]||0)+1;byRoom.set(k,m)});
+ openModal(`<h3>Cadastrar a partir do desenho</h3>
+ <p class="muted">Equipamentos sem TAG no projeto (difusores, grelhas, dampers…): o programa cria a TAG sozinho — <b>tipo + ambiente + número</b>, ex.: <b>D-ENF08-01</b> — preenche modelo, medida, vazão e ambiente com o que está escrito no desenho e já coloca cada ponto na planta.</p>
+ <div class="two"><div class="pr"><label>Categoria</label><select data-chg="cadCat"><option value="*" ${cat==='*'?'selected':''}>Todas as categorias</option>${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${k===cat?'selected':''}>${c.l}</option>`).join('')}</select></div>
+ <div class="pr"><label>Onde</label><select data-chg="cadRoom"><option value="">Toda a planta</option>${ro.map(x=>`<option value="${x.i}" ${String(x.i)===String(room)?'selected':''}>${esc(x.r.n)} · ${String(x.r.A).replace('.',',')} m²</option>`).join('')}</select></div></div>
+ <div class="cad-sum"><div class="cad-n"><b>${pl.fresh.length}</b><span>para cadastrar</span></div>${pl.done?`<div class="cad-n"><b>${pl.done}</b><span>já cadastrados</span></div>`:''}
+  <div class="cad-chips">${Object.entries(byCat).map(([k,n])=>`<span class="pk-chip c">${n} ${esc(CATS[k].l)}</span>`).join('')}</div></div>
+ ${pl.fresh.length?`<div class="cad-list">${[...byRoom.entries()].slice(0,40).map(([k,m])=>`<div class="cad-r"><span>📍 <b>${esc(k)}</b></span><span class="muted">${Object.entries(m.c).map(([c,n])=>n+' '+esc(CATS[c].l)).join(' · ')}</span></div>`).join('')}${byRoom.size>40?`<div class="muted">… e mais ${byRoom.size-40} ambiente(s)</div>`:''}</div>
+ <div class="pk-l">Exemplos de TAG</div><div class="cad-tags">${pl.fresh.slice(0,8).map(r=>`<span class="pk-chip">${esc(r.tag)}</span>`).join('')}</div>`
+ :`<div class="muted" style="margin-top:10px">Nada novo para cadastrar com este filtro. O programa procura no desenho textos com o nome da categoria (ex.: “DIFUSOR”, “GRELHA”) ou as palavras-chave salvas.</div>`}
+ <div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" data-act="cadGo" ${pl.fresh.length?'':'disabled'}>Cadastrar ${pl.fresh.length}</button></div>`)}
+let cadSel={cat:'*',room:''};
+CHG.cadCat=b=>{cadSel.cat=b.value;cadModal(cadSel.cat,cadSel.room)};
+CHG.cadRoom=b=>{cadSel.room=b.value;cadModal(cadSel.cat,cadSel.room)};
+ACT.dxfCad=()=>{cadSel={cat:ui.catFilter||'*',room:V.room!=null?String(V.room):''};cadModal(cadSel.cat,cadSel.room)};
+ACT.cadGo=()=>{const d=docCache[V.p.id],P=V.cadPlan;if(!d||!P||!P.pl.fresh.length)return;const {pl}=P;
+ for(const r of pl.fresh){const it={id:uid(),projetoId:V.p.projetoId,cat:r.cat,campos:r.campos,src:r.src};S.itens.push(it);
+  S.marcas.push({id:uid(),itemId:it.id,plantaId:V.p.id,pagina:ui.pagina,x:(r.cx-d.x0)/d.w,y:1-(r.cy-d.y0)/d.h})}
+ logH('criou','item','',`Cadastrou ${pl.fresh.length} equipamento(s) a partir do desenho ${V.p.nome}`);save();closeModal();V.hl=null;viewerUpdate();toast(pl.fresh.length+' equipamento(s) cadastrado(s) e posicionado(s) na planta')};
+/* botão na tela de Itens: abre a planta DXF e já pergunta o que cadastrar */
+function cadWhenReady(id){let n=0;const t=setInterval(()=>{n++;const d=docCache[id];if(d&&d.prims&&V&&V.p.id===id){clearInterval(t);ACT.dxfCad()}else if(n>200)clearInterval(t)},300)}
+ACT.cadItens=()=>{const pls=S.plantas.filter(p=>p.projetoId===ui.projetoId&&p.tipo==='dxf');
+ if(!pls.length){alert('Este projeto ainda não tem planta DXF. Envie uma em Administração › Enviar planta.');return}
+ if(pls.length===1){openPlanta(pls[0].id);cadWhenReady(pls[0].id);return}
+ openModal(`<h3>De qual planta cadastrar?</h3>${pls.map(p=>`<div class="si" data-act="cadPick" data-id="${p.id}"><b>${esc(p.nome)}</b><span class="muted">${esc([p.pav,p.disc].filter(Boolean).join(' · '))}</span></div>`).join('')}<div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`)};
+ACT.cadPick=b=>{closeModal();openPlanta(b.dataset.id);cadWhenReady(b.dataset.id)};
+function zoomBox(d,x0,y0,x1,y1,frac){const r2=$('#vp').getBoundingClientRect();
+ const w=Math.max(x1-x0,d.w/2000),h=Math.max(y1-y0,d.h/2000);
+ V.z=Math.max(1,Math.min(40,Math.min(r2.width*frac*d.w/(w*V.W),r2.height*frac*d.h/(h*V.H))));
+ const nx=((x0+x1)/2-d.x0)/d.w,ny=1-((y0+y1)/2-d.y0)/d.h;V.tx=r2.width/2-nx*V.W*V.z;V.ty=r2.height/2-ny*V.H*V.z;applyT()}
+function roomBox(r){const b=r.bb,l=r.lb;return{x0:Math.min(b.x0,l.x0),y0:Math.min(b.y0,l.y0),x1:Math.max(b.x1,l.x1),y1:Math.max(b.y1,l.y1)}}
+function drawRoom(ctx,d,X,Y,sc){const r=V.room!=null&&d.rooms?d.rooms[V.room]:null;if(!r)return;
+ ctx.save();ctx.fillStyle='rgba(245,158,11,.17)';ctx.strokeStyle='#f59e0b';ctx.lineWidth=3;ctx.lineJoin='round';
+ if(r.poly){ctx.beginPath();r.poly.forEach((v,i)=>i?ctx.lineTo(X(v[0]),Y(v[1])):ctx.moveTo(X(v[0]),Y(v[1])));ctx.closePath();ctx.fill();ctx.stroke()}
+ else{ctx.setLineDash([8,5]);const x=X(r.bb.x0),y=Y(r.bb.y1),w=(r.bb.x1-r.bb.x0)*sc,h=(r.bb.y1-r.bb.y0)*sc;ctx.fillRect(x,y,w,h);ctx.strokeRect(x,y,w,h);ctx.setLineDash([])}
+ const tx=r.n+' · '+String(r.A).replace('.',',')+' m²';ctx.font='700 13px Arial,sans-serif';const tw=ctx.measureText(tx).width+16,bx=X(r.bb.x0),by=Y(r.bb.y1)-26;
+ ctx.fillStyle='#b45309';ctx.beginPath();ctx.roundRect?ctx.roundRect(bx,by,tw,22,6):ctx.rect(bx,by,tw,22);ctx.fill();ctx.fillStyle='#fff';ctx.textBaseline='middle';ctx.textAlign='left';ctx.fillText(tx,bx+8,by+11);ctx.restore()}
+ACT.hlGo=(b,e)=>{e?.preventDefault();const d=docCache[V.p.id],o=V.hl?.list[+b.dataset.i];if(!d||!o)return;const x=o.r||o.box;zoomBox(d,x.x0,x.y0,x.x1,x.y1,.18)};
+const roomOpts=d=>(d.rooms||[]).map((r,i)=>({r,i})).sort((a,b)=>a.r.n.localeCompare(b.r.n,'pt-BR')||a.r.A-b.r.A);
+function setRoom(i,zoom){V.room=(i===''||i==null||i<0)?null:+i;V.hl=null;const n=$('#hlnote');if(n)n.dataset.k='';const sel=$('#roomSel');if(sel)sel.value=V.room==null?'':String(V.room);
+ const d=docCache[V.p.id];if(d&&V.room!=null&&zoom){const b=roomBox(d.rooms[V.room]);zoomBox(d,b.x0,b.y0,b.x1,b.y1,.55)}drawDxfSoon()}
+CHG.roomF=b=>setRoom(b.value,true);
+ACT.roomPick=b=>{try{closeModal()}catch(e){}setRoom(+b.dataset.i,true)};
+ACT.roomList=()=>{const d=docCache[V?.p.id];if(!d||!d.rooms?.length)return;
+ const c=collectEq(d,Object.keys(CATS),'');const by=new Map();c.out.forEach(o=>{const k=o.room==null?-1:o.room;(by.get(k)||by.set(k,[]).get(k)).push(o)});
+ const line=l=>{const m={};l.forEach(o=>{const k=o.cat?CATS[o.cat].l:'Outros';m[k]=(m[k]||0)+1});return Object.entries(m).map(([k,v])=>v+' '+k).join(' · ')};
+ const withEq=roomOpts(d).filter(x=>by.has(x.i)),without=roomOpts(d).filter(x=>!by.has(x.i));
+ openModal(`<h3>Equipamentos por ambiente</h3><p class="muted">O programa lê o nome e a área de cada sala no desenho e associa cada equipamento à sala onde ele está. Clique no ambiente para vê-lo na planta.</p>
+ <div style="max-height:60vh;overflow:auto">${withEq.map(x=>`<div class="si" data-act="roomPick" data-i="${x.i}"><span><b>${esc(x.r.n)}</b> <span class="muted">${String(x.r.A).replace('.',',')} m²</span><br><span class="muted">${esc(line(by.get(x.i)))}</span></span><span class="chip">${by.get(x.i).length}</span></div>`).join('')||'<div class="muted">Nenhum equipamento foi associado a ambientes.</div>'}
+ ${by.has(-1)?`<div class="si"><span><b>Fora de qualquer ambiente</b><br><span class="muted">${esc(line(by.get(-1)))}</span></span><span class="chip">${by.get(-1).length}</span></div>`:''}
+ ${without.length?`<details><summary class="muted">${without.length} ambiente(s) sem equipamento identificado</summary>${without.map(x=>`<div class="si" data-act="roomPick" data-i="${x.i}"><span>${esc(x.r.n)} <span class="muted">${String(x.r.A).replace('.',',')} m²</span></span></div>`).join('')}</details>`:''}</div>
+ <div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`)};
 ACT.kwSave=()=>{const k=ui.catFilter,q=(V.q||'').trim();if(!k||!q)return;const c=cfg();c.kw=c.kw||{};c.kw[k]=[...new Set([...(c.kw[k]||[]),q])];save();V.hl=null;const n=$('#hlnote');if(n)n.dataset.k='';drawDxfSoon();toast('Palavra-chave salva em '+CATS[k].l)};
 ACT.kwClear=(b,e)=>{e?.preventDefault();const k=ui.catFilter;if(k&&cfg().kw){delete cfg().kw[k];save();V.hl=null;const n=$('#hlnote');if(n)n.dataset.k='';drawDxfSoon()}};
 function drawDxfSoon(){if(!V||V.raf)return;V.raf=requestAnimationFrame(()=>{if(V)V.raf=0;drawDxfView()})}
@@ -555,7 +733,7 @@ function drawDxfView(){
  ctx.save();ctx.beginPath();ctx.rect(V.tx,V.ty,V.W*V.z,V.H*V.z);ctx.clip();
  const vx0=d.x0+(0-ox)/sc,vx1=d.x0+(r.width-ox)/sc,vy1=d.y0+oy/sc,vy0=d.y0+(oy-r.height)/sc;
  ctx.lineWidth=1.2;ctx.lineJoin='round';ctx.lineCap='round';
- if(ui.catFilter||V.q){if(!V.hl)V.hl=hlCompute(d)||{list:[],items:0,found:0};if(V.hl.list.length)ctx.globalAlpha=.3}
+ if(hlOn()){if(!V.hl)V.hl=hlCompute(d)||{list:[],items:0,found:0};if(V.hl.list.length||V.room!=null||V.duct!=null)ctx.globalAlpha=.3}
  let cur=null;const flush=()=>{if(cur!==null){ctx.stroke();cur=null}};
  for(const p of d.prims){
   if(p.x1<vx0||p.x0>vx1||p.y1<vy0||p.y0>vy1)continue;
@@ -566,7 +744,7 @@ function drawDxfView(){
    p.s.split('\n').forEach((ln,i)=>ctx.fillText(ln,0,i*px*1.2));ctx.restore()}
  }
  flush();ctx.globalAlpha=1;
- if(ui.catFilter||V.q){const hh=drawHl(ctx,d,X,Y,sc);hlNote(hh)}else hlNote(null);
+ if(hlOn()){drawRoom(ctx,d,X,Y,sc);drawDuct(ctx,d,X,Y,sc,vx0,vx1,vy0,vy1);const hh=drawHl(ctx,d,X,Y,sc);hlNote(hh)}else hlNote(null);
  const h=V.pickHl;if(h){ctx.fillStyle='rgba(23,105,224,.14)';ctx.strokeStyle='#1769e0';ctx.lineWidth=2;const a=X(h.x0),b=Y(h.y1),w=(h.x1-h.x0)*sc,hh=(h.y1-h.y0)*sc;ctx.fillRect(a,b,w,hh);ctx.strokeRect(a,b,w,hh)}
  if(V.pickLbl&&h){const tx=V.pickLbl;ctx.font='700 14px Arial,sans-serif';const tw=ctx.measureText(tx).width+22,cx=(X(h.x0)+X(h.x1))/2;let lx=Math.max(8,Math.min(r.width-tw-8,cx-tw/2)),ly=Y(h.y1)-38;if(ly<6)ly=Y(h.y0)+14;ctx.save();ctx.shadowColor='rgba(0,0,0,.35)';ctx.shadowBlur=10;ctx.fillStyle='#0a2a52';ctx.beginPath();ctx.roundRect?ctx.roundRect(lx,ly,tw,28,8):ctx.rect(lx,ly,tw,28);ctx.fill();ctx.restore();ctx.fillStyle='#fff';ctx.textBaseline='middle';ctx.textAlign='left';ctx.fillText(tx,lx+11,ly+14)}
  ctx.restore();
@@ -588,17 +766,25 @@ function pickDxf(e){
  // texto mais provável: o que está sob o clique, ou o rótulo mais próximo
  let tHit=null,bs=1e308;const maxd=70/sc;
  for(const t of d.texts){const dx=Math.max(t.x0-x,0,x-t.x1),dy=Math.max(t.y0-y,0,y-t.y1),dist=Math.hypot(dx,dy);if(dist>maxd)continue;const sc2=dist===0?-1+(t.x1-t.x0)*(t.y1-t.y0)/(d.w*d.h):dist;if(sc2<bs){bs=sc2;tHit=t}}
- let layer='',lineHit=null;
+ let layer='',lineHit=null,ductHit=null;
+ {let bd2=tol*1.6;for(const p of d.prims){if(!p.k||x<p.x0-tol*2||x>p.x1+tol*2||y<p.y0-tol*2||y>p.y1+tol*2)continue;for(let i=1;i<p.p.length;i++){const dd=segDist(x,y,p.p[i-1],p.p[i]);if(dd<bd2){bd2=dd;ductHit=p}}}}
  if(!best&&!tHit){let bd=tol*.8;for(const p of d.prims){if(p.t!=='l'||x<p.x0-tol||x>p.x1+tol||y<p.y0-tol||y>p.y1+tol)continue;for(let i=1;i<p.p.length;i++){const a=p.p[i-1],b=p.p[i],dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy;let t=L2?((x-a[0])*dx+(y-a[1])*dy)/L2:0;t=Math.max(0,Math.min(1,t));const dd=Math.hypot(x-a[0]-t*dx,y-a[1]-t*dy);if(dd<bd){bd=dd;lineHit=p}}}
   if(lineHit)layer=lineHit.ly}
  const strings=[];if(best)insStrings(d,best.r).forEach(s=>strings.push(s));
  if(tHit)tHit.s.split('\n').forEach(s=>strings.push(s.trim()));
  const uniq=[...new Set(strings.filter(Boolean))].slice(0,8);
+ let duct=null;const dimHit=tHit&&d.dims?d.dims.find(m=>m.t===tHit):null;
+ if(!best&&(dimHit||(ductHit&&(!tHit||bs>25/sc)))){const q=dimHit?dimHit.q:ductHit,k=q.k,same=(d.dims||[]).filter(m=>m.k===k);
+  const exact=[...new Set(same.filter(m=>m.q===q).map(m=>m.txt))],near=[...new Set(same.map(m=>({m,dd:Math.hypot(m.cx-x,m.cy-y)})).sort((a,b)=>a.dd-b.dd).slice(0,3).map(z=>z.m.txt))];
+  duct={k,col:d.kc[k],exact,near}}
  const items=matchItems(uniq);
  const pl=tHit?prettyLabel(tHit.s):null;
- const title=best?.r.attrs.find(a=>a.text)?.text?(best.r.name+' · '+best.r.attrs.find(a=>a.text).text):best?best.r.name:(pl?pl.title:'');
- V.pickHl=tHit&&(!best||(tHit.x1-tHit.x0)*(tHit.y1-tHit.y0)<(best.r.x1-best.r.x0)*(best.r.y1-best.r.y0))?tHit:(best?best.r:null);V.pickLbl=title;V.pick={x:nm.x,y:nm.y};drawDxfSoon();
- showPick({title,pl,name:best?.r.name,layer:best?.r.ly||tHit?.ly||layer,strings:uniq,items,tagAttr:best?.r.attrs.find(a=>/tag|ident|nome|codigo/i.test(a.tag)&&a.text)?.text,empty:!best&&!tHit&&!lineHit})}
+ const pb=tHit||(best&&best.r),ri=d.rooms&&d.rooms.length?roomOf(d,pb?(pb.x0+pb.x1)/2:x,pb?(pb.y0+pb.y1)/2:y):-1,room=ri>=0?d.rooms[ri]:null;
+ let title=best?.r.attrs.find(a=>a.text)?.text?(best.r.name+' · '+best.r.attrs.find(a=>a.text).text):best?best.r.name:(pl?pl.title:'');
+ if(!title&&room)title=room.n;
+ if(duct)title='Duto de '+KINDS[duct.k]+((duct.exact[0]||duct.near[0])?' · '+(duct.exact[0]||duct.near[0]):'');
+ V.pickHl=tHit&&(!best||(tHit.x1-tHit.x0)*(tHit.y1-tHit.y0)<(best.r.x1-best.r.x0)*(best.r.y1-best.r.y0))?tHit:(best?best.r:null);if(duct)V.pickHl=dimHit?dimHit.t:{x0:x-tol,x1:x+tol,y0:y-tol,y1:y+tol};V.pickLbl=title;V.pick={x:nm.x,y:nm.y};drawDxfSoon();
+ showPick({title,pl,room,ri,duct,name:best?.r.name,layer:best?.r.ly||tHit?.ly||layer,strings:uniq,items,tagAttr:best?.r.attrs.find(a=>/tag|ident|nome|codigo/i.test(a.tag)&&a.text)?.text,empty:!best&&!tHit&&!lineHit&&!room&&!duct})}
 function showPick(info){
  let c=$('#pickcard');if(!c){c=document.createElement('div');c.id='pickcard';$('#vp').append(c);c.addEventListener('pointerdown',e=>e.stopPropagation());c.addEventListener('pointerup',e=>e.stopPropagation());c.addEventListener('wheel',e=>e.stopPropagation())}
  const office=mode==='escritorio';
@@ -609,6 +795,9 @@ function showPick(info){
  <div class="pk-t">${esc(info.title||info.name||'Elemento do desenho')}</div>
  <div class="pk-chips">${pl&&pl.cat?`<span class="pk-chip c">${esc(CATS[pl.cat].l)}</span>`:''}${(pl?pl.dims:[]).map(x=>`<span class="pk-chip">📐 ${esc(x)}</span>`).join('')}${info.layer?`<span class="pk-chip g">Camada: ${esc(info.layer)}</span>`:''}</div>
  ${pl&&pl.extra.length?`<div class="pk-l">Complemento no desenho</div><div class="pk-v">${pl.extra.map(esc).join(' · ')}</div>`:''}
+ ${info.duct?`<div class="pk-chips"><span class="pk-chip" style="background:${info.duct.col};color:#fff">${esc(KINDS[info.duct.k])}</span></div>
+  ${info.duct.exact.length?`<div class="pk-l">Medida escrita neste trecho</div><div class="pk-v" style="font-size:20px">${info.duct.exact.map(esc).join(' · ')} <span class="muted" style="font-size:12px">cm</span></div>`:`<div class="pk-l">Medida mais próxima no mesmo tipo de duto</div><div class="pk-v">${info.duct.near.map(esc).join(' · ')||'<span class="muted">nenhuma medida escrita neste desenho</span>'} <span class="muted" style="font-size:12px">cm</span></div><div class="muted" style="font-size:12px">Não há medida escrita exatamente neste trecho; confirme no desenho.</div>`}`:''}
+ ${info.room&&info.title!==info.room.n?`<div class="pk-l">Ambiente</div><div class="pk-v">📍 ${esc(info.room.n)} <span class="muted">· ${String(info.room.A).replace('.',',')} m²</span></div><div class="pk-b"><button class="btn sm sec" data-act="roomPick" data-i="${info.ri}">Ver este ambiente</button></div>`:''}
  ${info.tagAttr?`<div class="pk-l">TAG no desenho</div><div class="pk-v">${esc(info.tagAttr)}</div>`:''}
  ${!pl&&info.strings.length?`<div class="pk-l">Textos encontrados</div><div class="pk-v">${info.strings.map(esc).join(' · ')}</div>`:''}
  ${info.items.length?`<div class="pk-l">No projeto cadastrado</div>${info.items.map(it=>`<div class="pk-it"><b>${esc(it.campos.tag)}</b> — ${CATS[it.cat].l}${it.campos.modelo?' · '+esc(it.campos.modelo):''} <span class="chip s-${statusOf(it.id)}">${ST[statusOf(it.id)]}</span><div class="pk-b"><button class="btn sm" data-act="pickOpen" data-id="${it.id}">Abrir conferência</button>${office&&!marcaDe(it.id)?`<button class="btn sm sec" data-act="pickMark" data-id="${it.id}">📍 Marcar ponto aqui</button>`:''}</div></div>`).join('')}`:'<div class="muted" style="margin-top:8px">Nenhum item do projeto com esta TAG.</div>'}
@@ -697,17 +886,23 @@ function filtersHTML(){
  <div><label>Pavimento</label><select data-chg="selPav"><option value="">Todos</option>${pavList(ui.projetoId).map(x=>`<option value="${esc(x)}" ${ui.pav===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
  <div><label>Planta</label><select data-chg="fPlanta"><option value="">Todas</option><option value="_none" ${ui.fPlanta==='_none'?'selected':''}>Sem ponto em planta</option>${pls.map(p=>`<option value="${p.id}" ${ui.fPlanta===p.id?'selected':''}>${esc(p.nome)}</option>`).join('')}</select></div>
  <div><label>Status</label><select data-chg="fStatus"><option value="">Todos</option>${STORDER.map(k=>`<option value="${k}" ${ui.fStatus===k?'selected':''}>${ST[k]}</option>`).join('')}</select></div></div>`}
-CHG.fCat=b=>{ui.fCat=b.value;render()};CHG.fPlanta=b=>{ui.fPlanta=b.value;render()};CHG.fStatus=b=>{ui.fStatus=b.value;render()};
+CHG.agr=b=>{ui.agr=b.checked;render()};CHG.fCat=b=>{ui.fCat=b.value;render()};CHG.fPlanta=b=>{ui.fPlanta=b.value;render()};CHG.fStatus=b=>{ui.fStatus=b.value;render()};
 const onSearchInput=e=>{if(e.target.id==='fBusca'){ui.fBusca=e.target.value;clearTimeout(viewItens.t);viewItens.t=setTimeout(()=>{const pos=e.target.selectionStart;render();const n=$('#fBusca');if(n){n.focus();n.setSelectionRange(pos,pos)}},250)}};
 function viewItens(){
  if(!ui.projetoId){ui.view='home';return render()}
  const office=mode==='escritorio',list=filteredItens();
  $('#cfMain').innerHTML=`<div class="card"><div class="row" style="align-items:center"><h2 style="flex:3;margin:0">Itens do projeto — ${esc(proj(ui.projetoId).nome)}</h2>
-  ${office?`<button class="btn" data-act="newItem" style="flex:none">+ Novo item</button><button class="btn sec" data-act="csvImp" style="flex:none">⬆ Importar Excel / CSV</button><button class="btn sec" data-act="csvTpl" style="flex:none">⬇ Modelo Excel</button><input type="file" id="csvF" accept=".xlsx,.xls,.xlsm,.csv,text/csv" style="display:none">`:''}</div>
+  ${office?`<button class="btn" data-act="cadItens" style="flex:none">➕ Puxar do desenho</button><button class="btn sec" data-act="newItem" style="flex:none">+ Novo item</button><button class="btn sec" data-act="csvImp" style="flex:none">⬆ Importar Excel / CSV</button><button class="btn sec" data-act="csvTpl" style="flex:none">⬇ Modelo Excel</button><input type="file" id="csvF" accept=".xlsx,.xls,.xlsm,.csv,text/csv" style="display:none">`:''}</div>
   <div style="margin-top:10px">${filtersHTML()}</div></div>
-  <div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Status</th><th>TAG</th><th>Pavimento</th><th>Categoria</th><th>Modelo</th><th>Local</th><th>Planta(s)</th><th></th></tr></thead><tbody>
-  ${list.map(i=>{const s=statusOf(i.id);return `<tr class="click" data-act="openConfRow" data-id="${i.id}"><td><span class="chip s-${s}">${ST[s]}</span></td><td><b>${esc(i.campos.tag)}</b></td><td>${esc(pavLabel(i))}</td><td>${CATS[i.cat].l}</td><td>${esc(i.campos.modelo||'')}</td><td>${esc(i.campos.ambiente||i.campos.localizacao||'')}</td><td>${esc(plantasDoItem(i.id).join(', ')||'— sem ponto —')}</td>
-   <td style="white-space:nowrap">${office?`<button class="btn sec sm" data-act="editItem" data-id="${i.id}">✎</button> <button class="btn sec sm" data-act="histItem" data-id="${i.id}" title="Histórico">🕘</button> <button class="btn red sm" data-act="delItem" data-id="${i.id}">🗑</button>`:'<span class="muted">Conferir ›</span>'}</td></tr>`}).join('')||`<tr><td colspan="8" class="muted">Nenhum item${S.itens.length?' com esses filtros':' cadastrado'}.</td></tr>`}
+  <div class="card" style="padding:0;overflow:auto"><div class="grp-bar noprint"><label><input type="checkbox" data-chg="agr" ${ui.agr!==false?'checked':''}> Agrupar por ambiente</label><span class="muted">${list.length} item(ns)</span></div><table class="tbl-it"><thead><tr><th>Status</th><th>TAG</th><th>Categoria</th><th>Modelo</th><th>Medida</th><th>Vazão</th><th>Planta(s)</th><th></th></tr></thead><tbody>
+  ${(()=>{const nat=(a,b)=>String(a.campos.tag||'').localeCompare(String(b.campos.tag||''),'pt-BR',{numeric:true}),roomOf2=i=>i.campos.ambiente||i.campos.localizacao||'';
+   const row=i=>{const s=statusOf(i.id);return `<tr class="click" data-act="openConfRow" data-id="${i.id}"><td><span class="chip s-${s}">${ST[s]}</span></td><td><b>${esc(i.campos.tag)}</b></td><td><span class="cat-pill">${CATS[i.cat].l}</span></td><td>${esc(i.campos.modelo||'')}</td><td>${esc(i.campos.dimensoes||'')}</td><td>${esc(i.campos.vazao||'')}</td><td>${esc(plantasDoItem(i.id).join(', ')||'— sem ponto —')}</td>
+   <td style="white-space:nowrap">${office?`<button class="btn sec sm" data-act="editItem" data-id="${i.id}">✎</button> <button class="btn sec sm" data-act="histItem" data-id="${i.id}" title="Histórico">🕘</button> <button class="btn red sm" data-act="delItem" data-id="${i.id}">🗑</button>`:'<span class="muted">Conferir ›</span>'}</td></tr>`};
+   if(!list.length)return`<tr><td colspan="8" class="muted">Nenhum item${S.itens.length?' com esses filtros':' cadastrado'}.</td></tr>`;
+   if(ui.agr===false)return[...list].sort(nat).map(row).join('');
+   const g=new Map();list.forEach(i=>{const k=roomOf2(i)||'Sem ambiente';(g.get(k)||g.set(k,[]).get(k)).push(i)});
+   return[...g.entries()].sort((a,b)=>(a[0]==='Sem ambiente')-(b[0]==='Sem ambiente')||a[0].localeCompare(b[0],'pt-BR')).map(([k,l])=>{const c={};l.forEach(i=>{c[CATS[i.cat].l]=(c[CATS[i.cat].l]||0)+1});
+    return`<tr class="grp"><td colspan="8">📍 <b>${esc(k)}</b> <span class="muted">· ${l.length} item(ns): ${Object.entries(c).map(([a,b])=>b+' '+esc(a)).join(' · ')}</span></td></tr>`+l.sort(nat).map(row).join('')}).join('')})()}
   </tbody></table></div>`;
  const f=$('#csvF');if(f)f.onchange=()=>{importPlanilha(f.files[0]);f.value=''};
 }
