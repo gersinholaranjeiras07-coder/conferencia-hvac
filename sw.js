@@ -1,7 +1,6 @@
-const C='confhvac-2026.11.18-1735';
-const FILES=['./','./index.html','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
-self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(FILES.map(f=>new Request(f,{cache:'reload'})))))});
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))).then(()=>self.clients.claim()))});
-self.addEventListener('message',e=>{if(e.data==='SKIP')self.skipWaiting()});
+const V='comissionamento-0.5.0-59092';
+const FILES=["./", "icon-192.png", "icon-512.png", "index.html", "interface/OrceHVAC_Prototipo_v1.html", "interface/desktop/assets/icon.png", "interface/desktop/assets/orcehvac-icon-v1.png", "interface/municipios-ibge.js", "interface/orcehvac-backup.js", "interface/orcehvac-base.js", "interface/orcehvac-conferencia.css", "interface/orcehvac-conferencia.js", "interface/orcehvac-desktop-ui.js", "interface/orcehvac-modals.js", "interface/orcehvac-organization.js", "interface/orcehvac-storage.js", "interface/orcehvac-tema.css", "interface/orcehvac.css", "interface/orcehvac.js", "interface/pwa.js", "manifest.webmanifest", "shared/state-schema.js", "vendor/dxf-parser.js", "vendor/pdfjs/LICENSE", "vendor/pdfjs/README.md", "vendor/pdfjs/pdf.bundle.js", "vendor/pdfjs/pdf.worker.bundle.js", "vendor/pdfjs/resources.js", "vendor/xlsx.full.min.js"];
+self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(n=>n!==V).map(n=>caches.delete(n)))).then(()=>self.clients.claim()))});
 self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;
- e.respondWith(caches.open(C).then(c=>c.match(e.request,{ignoreSearch:true}).then(hit=>hit||(e.request.mode==='navigate'?c.match('./index.html'):null)||fetch(e.request))))});
+ e.respondWith(caches.match(e.request,{ignoreSearch:true}).then(r=>r||fetch(e.request)))});
