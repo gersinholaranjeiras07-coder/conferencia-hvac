@@ -62,7 +62,7 @@ async function blobIds(){const d=desk();if(d)return d({action:'blob-list'});retu
 async function urlFor(id){if(urlCache.has(id))return urlCache.get(id);const b=await blobGet(id);if(!b)return '';const u=URL.createObjectURL(b);urlCache.set(id,u);return u}
 /* ---------- Bibliotecas locais (vendor/) carregadas sob demanda ---------- */
 const libs={};
-function loadVendor(name){const root=new URL('.',SCRIPT_URL);if(!libs[name])libs[name]=new Promise((res,rej)=>{const s=document.createElement('script');s.src=new URL('../vendor/'+name,root).href;s.onload=res;s.onerror=()=>{libs[name]=null;rej(Error('Arquivo não encontrado: vendor/'+name))};document.head.append(s)});return libs[name]}
+function loadVendor(name){const root=new URL('.',SCRIPT_URL);if(!libs[name])libs[name]=new Promise((res,rej)=>{const s=document.createElement('script');s.src=new URL(name.split('/').pop(),root).href;s.onload=res;s.onerror=()=>{libs[name]=null;rej(Error('Arquivo não encontrado: vendor/'+name))};document.head.append(s)});return libs[name]}
 async function ensureXlsx(){if(globalThis.XLSX)return true;try{await loadVendor('xlsx.full.min.js')}catch{return false}return !!globalThis.XLSX}
 async function ensureDxf(){if(globalThis.DxfParser)return true;await loadVendor('dxf-parser.js');return !!globalThis.DxfParser}
 let pdfEngine=null;
