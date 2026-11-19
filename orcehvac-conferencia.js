@@ -162,7 +162,7 @@ function bindRoot(){
  root.addEventListener('change',e=>{const b=e.target.closest('[data-chg]');if(b&&CHG[b.dataset.chg])CHG[b.dataset.chg](b,e)});
  root.addEventListener('input',e=>onSearchInput(e));
 }
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&root&&root.isConnected){if($('#cfModal').innerHTML)closeModal();else if(ui.placing){ui.placing=null;viewerUpdate()}}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&root&&root.isConnected){if($('#cfModal').innerHTML)closeModal();else if(ui.placing){ui.placing=null;viewerUpdate()}else if(V&&V.cadManual){V.cadManual=false;viewerUpdate()}}});
 ACT.closeModal=()=>closeModal();
 ACT.nav=b=>{ui.view=b.dataset.v;closeModal();render()};
 ACT.mode=b=>{const v=b.dataset.v,ap=()=>{mode=v;localStorage.setItem('orcehvac.conf.modo',mode);if(mode==='campo'&&ui.view==='admin')ui.view='home';ui.placing=null;render()};if(v==='escritorio')askOffice(ap);else ap()};
@@ -232,7 +232,7 @@ function viewPlant(){
  const p=planta(ui.plantaId);if(!p){ui.view='home';return render()}
  const office=mode==='escritorio';
  $('#cfMain').innerHTML=`<div class="pv"><div class="tb noprint" id="tb"></div>
-  <div class="pvbody"><div id="vp" class="${ui.placing?'placing':''}"><div id="stage"><canvas id="cv"></canvas><div id="mks"></div></div>
+  <div class="pvbody"><div id="vp" class="${ui.placing||(V&&V.cadManual)?'placing':''}"><div id="stage"><canvas id="cv"></canvas><div id="mks"></div></div>
   <div id="loading" style="position:absolute;left:14px;top:14px;background:#fff;padding:6px 10px;border-radius:8px">Carregando planta…</div></div>
   <aside id="side" class="${ui.side?'':'hide'}"></aside></div></div>`;
  V={p,z:1,tx:0,ty:0,W:1000,H:700,pts:new Map(),drag:null,pages:p.paginas||1};
@@ -295,7 +295,7 @@ function setupPointer(){
   if(!V.pts.has(e.pointerId))return;V.pts.delete(e.pointerId);vp.classList.remove('drag');
   if(V.pts.size<2)V.pinch=null;
   const d=V.drag;if(V.pts.size>0||!d)return;V.drag=null;
-  if(!d.moved){ if(d.mk)markerClick(d.mk); else if(ui.placing){const nm=normCoords(e);if(nm)placeMarker(ui.placing,nm.x,nm.y)} else if(V.p.tipo==='dxf')pickDxf(e) }
+  if(!d.moved){ if(d.mk)markerClick(d.mk); else if(V.cadManual){V.cadManual=false;const nm=normCoords(e);if(V.p.tipo==='dxf')pickDxf(e);viewerUpdate();manualCad(nm)} else if(ui.placing){const nm=normCoords(e);if(nm)placeMarker(ui.placing,nm.x,nm.y)} else if(V.p.tipo==='dxf')pickDxf(e) }
   else if(d.mk&&d.pos&&mode==='escritorio'){const m=marcaDe(d.mk);if(m){m.x=d.pos.x;m.y=d.pos.y;save();logH('editou','marcador',d.mk,`Moveu o ponto de ${item(d.mk)?.campos.tag} na planta ${V.p.nome}`)}}
  };
  vp.addEventListener('pointerup',up);vp.addEventListener('pointercancel',up);
@@ -330,16 +330,17 @@ function viewerUpdate(){
   <span class="sp"></span>
   ${STORDER.map(k=>`<span class="chip s-${k} fchip ${ui.stFilter.has(k)?'on':''}" data-act="stf" data-k="${k}" title="Mostrar/ocultar">${ST[k]} ${cnt[k]}</span>`).join('')}
   <select data-chg="catF"><option value="">Todas as categorias</option>${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${ui.catFilter===k?'selected':''}>${c.l}</option>`).join('')}</select>
-  <button class="btn sec sm" data-act="sideT">☰ Lista</button>${p.tipo==='dxf'?(docCache[p.id]?.rooms?.length?`<select id="roomSel" class="dxq" data-chg="roomF" title="Filtrar por ambiente"><option value="">Todos os ambientes (${docCache[p.id].rooms.length})</option>${roomOpts(docCache[p.id]).map(x=>`<option value="${x.i}" ${V.room===x.i?'selected':''}>${esc(x.r.n)} · ${String(x.r.A).replace('.',',')} m²</option>`).join('')}</select><button class="btn sec sm" data-act="roomList">📍 Por ambiente</button>`:'')+(Object.keys(docCache[p.id]?.kinds||{}).length?`<select id="ductSel" class="dxq" data-chg="ductF" title="Filtrar por tipo de duto"><option value="">Todos os dutos</option>${Object.keys(docCache[p.id].kinds).map(k=>`<option value="${k}" ${V.duct===k?'selected':''}>${esc(KINDS[k])}</option>`).join('')}</select><button class="btn sec sm" data-act="ductList">📏 Medidas dos dutos</button>`:'')+(mode==='escritorio'?'<button class="btn sm" data-act="dxfCad">➕ Cadastrar do desenho</button>':'')+'<input id="dxq" class="dxq" type="search" placeholder="Buscar texto no desenho…" value="'+esc(V.q||'')+'"><button class="btn sec sm" data-act="dxfList">🔎 Equipamentos do desenho</button>'+((docCache[p.id]?.clusters?.length||0)>1?`<button class="btn sec sm" data-act="dxfCl">🗺 Quadros (${docCache[p.id].clusters.length})</button>`:''):''}`;
+  <button class="btn sec sm" data-act="sideT">☰ Lista</button>${p.tipo==='dxf'?(docCache[p.id]?.rooms?.length?`<select id="roomSel" class="dxq" data-chg="roomF" title="Filtrar por ambiente"><option value="">Todos os ambientes (${docCache[p.id].rooms.length})</option>${roomOpts(docCache[p.id]).map(x=>`<option value="${x.i}" ${V.room===x.i?'selected':''}>${esc(x.r.n)} · ${String(x.r.A).replace('.',',')} m²</option>`).join('')}</select><button class="btn sec sm" data-act="roomList">📍 Por ambiente</button>`:'')+(Object.keys(docCache[p.id]?.kinds||{}).length?`<select id="ductSel" class="dxq" data-chg="ductF" title="Filtrar por tipo de duto"><option value="">Todos os dutos</option>${Object.keys(docCache[p.id].kinds).map(k=>`<option value="${k}" ${V.duct===k?'selected':''}>${esc(KINDS[k])}</option>`).join('')}</select><button class="btn sec sm" data-act="ductList">📏 Medidas dos dutos</button>`:'')+(mode==='escritorio'?'<button class="btn sm" data-act="dxfCad">➕ Cadastrar do desenho</button>':'')+'<input id="dxq" class="dxq" type="search" placeholder="Buscar texto no desenho…" value="'+esc(V.q||'')+'"><button class="btn sec sm" data-act="dxfList">🔎 Equipamentos do desenho</button>'+((docCache[p.id]?.clusters?.length||0)>1?`<button class="btn sec sm" data-act="dxfCl">🗺 Quadros (${docCache[p.id].clusters.length})</button>`:''):''}${mode==='escritorio'?`<button class="btn sm ${V.cadManual?'':'sec'}" data-act="cadManual" title="Clique na planta onde está um equipamento que o programa não identificou">${V.cadManual?'✋ Clique na planta…':'➕ Equipamento não identificado'}</button>`:''}`;
  // marcadores
  const vis=here.filter(m=>{const it=item(m.itemId);return ui.stFilter.has(statusOf(it.id))&&(!ui.catFilter||it.cat===ui.catFilter)});
  const mk=$('#mks');if(mk)mk.innerHTML=vis.map(m=>{const it=item(m.itemId),s=statusOf(it.id);
   return `<div class="mk ${office?'office-drag':''}" data-id="${it.id}" style="left:${m.x*100}%;top:${m.y*100}%" title="${esc(it.campos.tag)} — ${ST[s]}"><i class="s-${s}">${CATS[it.cat].s}</i><b>${esc(it.campos.tag)}</b></div>`}).join('');
- $('#vp')?.classList.toggle('placing',!!ui.placing);
+ $('#vp')?.classList.toggle('placing',!!ui.placing||!!V.cadManual);
  if(p.tipo==='dxf'){V.hl=null;drawDxfSoon()}
  // lateral
  const row=it=>{const s=statusOf(it.id);return `<div class="si" data-act="goItem" data-id="${it.id}"><span class="cfdot" style="background:${STC[s]}"></span><b>${esc(it.campos.tag)}</b><span class="muted">${CATS[it.cat].l}</span></div>`};
  let sd='';
+ if(V.cadManual)sd+=`<div class="banner">Clique na planta <b>onde está o equipamento</b> que não foi identificado. <a href="#" data-act="cancelPlace" onclick="return false">Cancelar (Esc)</a></div>`;
  if(ui.placing){const it=item(ui.placing);sd+=`<div class="banner">Clique na planta para posicionar <b>${esc(it.campos.tag)}</b>. <a href="#" data-act="cancelPlace">Cancelar (Esc)</a></div>`}
  sd+=`<h4>Itens nesta planta (${marks.length})</h4>`+(marks.length?marks.map(m=>row(item(m.itemId))).join(''):'<div class="muted">Nenhum ponto posicionado.</div>');
  if(office){
@@ -356,7 +357,7 @@ ACT.stf=b=>{const k=b.dataset.k;ui.stFilter.has(k)?ui.stFilter.delete(k):ui.stFi
 CHG.catF=b=>{ui.catFilter=b.value;viewerUpdate()};
 ACT.sideT=()=>{ui.side=!ui.side;$('#side').classList.toggle('hide',!ui.side)};
 ACT.startPlace=b=>{ui.placing=b.dataset.id;viewerUpdate()};
-ACT.cancelPlace=(b,e)=>{e.preventDefault();ui.placing=null;viewerUpdate()};
+ACT.cancelPlace=(b,e)=>{e.preventDefault();ui.placing=null;if(V)V.cadManual=false;viewerUpdate()};
 ACT.goItem=b=>{const m=marcaDe(b.dataset.id);if(!m)return;
  const go=()=>{centerOn(m.x,m.y);setTimeout(()=>{const el=$(`.mk[data-id="${m.itemId}"]`);el?.classList.add('hl');setTimeout(()=>el?.classList.remove('hl'),2200)},50)};
  if((m.pagina||1)!==ui.pagina){ui.pagina=m.pagina||1;loadPage().then(()=>{viewerUpdate();go()})}else go()};
@@ -694,6 +695,16 @@ ACT.cadItens=()=>{const pls=S.plantas.filter(p=>p.projetoId===ui.projetoId&&p.ti
  if(pls.length===1){openPlanta(pls[0].id);cadWhenReady(pls[0].id);return}
  openModal(`<h3>De qual planta cadastrar?</h3>${pls.map(p=>`<div class="si" data-act="cadPick" data-id="${p.id}"><b>${esc(p.nome)}</b><span class="muted">${esc([p.pav,p.disc].filter(Boolean).join(' · '))}</span></div>`).join('')}<div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`)};
 ACT.cadPick=b=>{closeModal();openPlanta(b.dataset.id);cadWhenReady(b.dataset.id)};
+
+/* ===== CADASTRO MANUAL: equipamento que o programa não identificou no desenho ===== */
+function suggestTag(cat,roomName){const pre=CATS[cat].s,code=roomName?roomCode(roomName):'SA',key=pre+'-'+code,used=new Set(projItens(V.p.projetoId).map(i=>String(i.campos.tag||'').toUpperCase()));let n=0,tag;do{n++;tag=key+'-'+String(n).padStart(2,'0')}while(used.has(tag));return tag}
+function manualCad(nm){if(!nm)return;const lp=V.lastPick&&Math.abs(V.lastPick.x-nm.x)<1e-9&&Math.abs(V.lastPick.y-nm.y)<1e-9?V.lastPick:null,pl=lp&&lp.pl,room=lp&&lp.room;
+ const cat=(pl&&pl.cat)||ui.catFilter||'difusor',txt=lp?(lp.txt||[]).join(' '):'',vm=txt.match(/(\d+(?:[.,]\d+)?)\s*m\s*[³3]\s*\/\s*h/i),campos={};
+ if(V.p.pav)campos.pavimento=V.p.pav;if(pl&&pl.cat&&pl.title){campos.modelo=pl.title;if(pl.dims[0])campos.dimensoes=pl.dims[0].replace(/[×X]/g,'x')}
+ if(vm)campos.vazao=vm[1]+' m³/h';if(/trox/i.test(txt))campos.fabricante='Trox';if(room){campos.ambiente=room.n;campos.localizacao=room.n}
+ itemForm(null,{cat,campos,place:{x:nm.x,y:nm.y},autoTag:c=>suggestTag(c,room?room.n:'')})}
+ACT.cadManual=()=>{V.cadManual=!V.cadManual;ACT.pickClose&&ACT.pickClose();viewerUpdate();if(V.cadManual)toast('Clique na planta onde está o equipamento')};
+ACT.pickCad=()=>{if(V?.pick)manualCad(V.pick)};
 function zoomBox(d,x0,y0,x1,y1,frac){const r2=$('#vp').getBoundingClientRect();
  const w=Math.max(x1-x0,d.w/2000),h=Math.max(y1-y0,d.h/2000);
  V.z=Math.max(1,Math.min(40,Math.min(r2.width*frac*d.w/(w*V.W),r2.height*frac*d.h/(h*V.H))));
@@ -783,7 +794,7 @@ function pickDxf(e){
  let title=best?.r.attrs.find(a=>a.text)?.text?(best.r.name+' · '+best.r.attrs.find(a=>a.text).text):best?best.r.name:(pl?pl.title:'');
  if(!title&&room)title=room.n;
  if(duct)title='Duto de '+KINDS[duct.k]+((duct.exact[0]||duct.near[0])?' · '+(duct.exact[0]||duct.near[0]):'');
- V.pickHl=tHit&&(!best||(tHit.x1-tHit.x0)*(tHit.y1-tHit.y0)<(best.r.x1-best.r.x0)*(best.r.y1-best.r.y0))?tHit:(best?best.r:null);if(duct)V.pickHl=dimHit?dimHit.t:{x0:x-tol,x1:x+tol,y0:y-tol,y1:y+tol};V.pickLbl=title;V.pick={x:nm.x,y:nm.y};drawDxfSoon();
+ V.pickHl=tHit&&(!best||(tHit.x1-tHit.x0)*(tHit.y1-tHit.y0)<(best.r.x1-best.r.x0)*(best.r.y1-best.r.y0))?tHit:(best?best.r:null);if(duct)V.pickHl=dimHit?dimHit.t:{x0:x-tol,x1:x+tol,y0:y-tol,y1:y+tol};V.pickLbl=title;V.pick={x:nm.x,y:nm.y};V.lastPick={x:nm.x,y:nm.y,pl,room,txt:uniq,title};drawDxfSoon();
  showPick({title,pl,room,ri,duct,name:best?.r.name,layer:best?.r.ly||tHit?.ly||layer,strings:uniq,items,tagAttr:best?.r.attrs.find(a=>/tag|ident|nome|codigo/i.test(a.tag)&&a.text)?.text,empty:!best&&!tHit&&!lineHit&&!room&&!duct})}
 function showPick(info){
  let c=$('#pickcard');if(!c){c=document.createElement('div');c.id='pickcard';$('#vp').append(c);c.addEventListener('pointerdown',e=>e.stopPropagation());c.addEventListener('pointerup',e=>e.stopPropagation());c.addEventListener('wheel',e=>e.stopPropagation())}
@@ -801,6 +812,7 @@ function showPick(info){
  ${info.tagAttr?`<div class="pk-l">TAG no desenho</div><div class="pk-v">${esc(info.tagAttr)}</div>`:''}
  ${!pl&&info.strings.length?`<div class="pk-l">Textos encontrados</div><div class="pk-v">${info.strings.map(esc).join(' · ')}</div>`:''}
  ${info.items.length?`<div class="pk-l">No projeto cadastrado</div>${info.items.map(it=>`<div class="pk-it"><b>${esc(it.campos.tag)}</b> — ${CATS[it.cat].l}${it.campos.modelo?' · '+esc(it.campos.modelo):''} <span class="chip s-${statusOf(it.id)}">${ST[statusOf(it.id)]}</span><div class="pk-b"><button class="btn sm" data-act="pickOpen" data-id="${it.id}">Abrir conferência</button>${office&&!marcaDe(it.id)?`<button class="btn sm sec" data-act="pickMark" data-id="${it.id}">📍 Marcar ponto aqui</button>`:''}</div></div>`).join('')}`:'<div class="muted" style="margin-top:8px">Nenhum item do projeto com esta TAG.</div>'}
+ ${office&&!info.items.length&&!info.empty&&!info.duct?`<div class="pk-b"><button class="btn sm" data-act="pickCad">➕ Cadastrar este equipamento</button></div>`:''}
  ${office&&free.length&&!info.items.length?`<div class="pk-b"><select id="pickSel">${free.map(i=>`<option value="${i.id}">${esc(i.campos.tag)} — ${CATS[i.cat].l}</option>`).join('')}</select><button class="btn sm" data-act="pickMarkSel">📍 Marcar aqui</button></div>`:''}`}`;
 }
 ACT.pickClose=()=>{$('#pickcard')?.remove();if(V){V.pickHl=null;V.pickLbl=null;drawDxfSoon()}};
@@ -938,24 +950,25 @@ ACT.histItem=b=>{const id=b.dataset.id;const h=S.hist.filter(x=>x.ref===id);
 function histHTML(h){return h.map(x=>`<div class="h"><b>${esc(x.acao)}</b> · ${esc(x.desc)}<br><span class="muted">${fdt(x.ts)} — ${esc(x.user)}</span>${(x.mud||[]).map(m=>`<div class="muted">&nbsp;&nbsp;${esc(m.campo)}: <s>${esc(m.de||'—')}</s> → <b>${esc(m.para||'—')}</b></div>`).join('')}</div>`).join('')||'<p class="muted">Sem registros.</p>'}
 
 /* ----- formulário de item ----- */
-function itemForm(id){
- const ex=id?item(id):null;let cat=ex?.cat||'damper';const vals={...(ex?.campos||{})};
+function itemForm(id,pre){
+ const ex=id?item(id):null;let cat=ex?.cat||pre?.cat||'damper';const vals={...(pre?.campos||{}),...(ex?.campos||{})};if(pre&&pre.autoTag&&!vals.tag){vals.tag=pre.autoTag(cat);pre.lastAuto=vals.tag}
  const build=()=>{
   const cf=CATS[cat];
-  openModal(`<h3>${ex?'Editar item':'Novo item'}</h3>
+  openModal(`<h3>${ex?'Editar item':pre&&pre.place?'Cadastrar equipamento na planta':'Novo item'}</h3>${pre&&pre.place?'<p class="muted">O ponto é colocado na planta exatamente onde você clicou.</p>':''}
   <div class="fld"><label>Categoria</label><select id="ic" ${ex?'':''}>${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${k===cat?'selected':''}>${c.l}</option>`).join('')}</select></div>
   ${cf.proj.map(k=>`<div class="fld"><label>${F[k].l}</label>${F[k].area?`<textarea data-k="${k}">${esc(vals[k]||'')}</textarea>`:`<input type="text" data-k="${k}" value="${esc(vals[k]||'')}">`}</div>`).join('')}
   <div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" id="isv">Salvar</button></div>`);
   const grab=()=>$$('[data-k]',$('#cfModal')).forEach(e=>vals[e.dataset.k]=e.value.trim());
-  $('#ic').onchange=e=>{grab();cat=e.target.value;build()};
+  $('#ic').onchange=e=>{grab();cat=e.target.value;if(pre&&pre.autoTag&&vals.tag===pre.lastAuto){vals.tag=pre.autoTag(cat);pre.lastAuto=vals.tag}build()};
   $('#isv').onclick=()=>{grab();const campos={};CATS[cat].proj.forEach(k=>campos[k]=vals[k]||'');
    if(!campos.tag)return toast('Informe a TAG / identificação');
-   if(S.itens.some(i=>i.projetoId===ui.projetoId&&i.id!==id&&i.campos.tag.toLowerCase()===campos.tag.toLowerCase()))return toast('Já existe um item com essa TAG neste projeto');
+   if(S.itens.some(i=>i.projetoId===(pre?V.p.projetoId:ui.projetoId)&&i.id!==id&&i.campos.tag.toLowerCase()===campos.tag.toLowerCase()))return toast('Já existe um item com essa TAG neste projeto');
    if(ex){const mud=[];if(ex.cat!==cat)mud.push({campo:'Categoria',de:CATS[ex.cat].l,para:CATS[cat].l});
     new Set([...Object.keys(ex.campos),...Object.keys(campos)]).forEach(k=>{if((ex.campos[k]||'')!==(campos[k]||''))mud.push({campo:F[k].l,de:ex.campos[k]||'',para:campos[k]||''})});
     ex.cat=cat;ex.campos=campos;if(mud.length)logH('editou','item',ex.id,`Editou ${campos.tag}`,mud)}
-   else{const n={id:uid(),projetoId:ui.projetoId,cat,campos};S.itens.push(n);logH('criou','item',n.id,`Criou ${campos.tag} (${CATS[cat].l})`,Object.entries(campos).filter(([k,v])=>v).map(([k,v])=>({campo:F[k].l,de:'',para:v})))}
-   save();closeModal();render();toast('Item salvo')};
+   else{const n={id:uid(),projetoId:pre?V.p.projetoId:ui.projetoId,cat,campos};S.itens.push(n);logH('criou','item',n.id,`Criou ${campos.tag} (${CATS[cat].l})`,Object.entries(campos).filter(([k,v])=>v).map(([k,v])=>({campo:F[k].l,de:'',para:v})));
+    if(pre&&pre.place)S.marcas.push({id:uid(),itemId:n.id,plantaId:V.p.id,pagina:ui.pagina,x:pre.place.x,y:pre.place.y})}
+   save();closeModal();if(pre&&pre.place){V.hl=null;viewerUpdate();renderKpi();drawDxfSoon();toast('Equipamento cadastrado e posicionado na planta')}else{render();toast('Item salvo')}};
  };
  build();
 }
