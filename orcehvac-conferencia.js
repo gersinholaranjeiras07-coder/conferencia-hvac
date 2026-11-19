@@ -255,7 +255,7 @@ async function loadPage(){
   }else if(p.tipo==='dxf'){
    await ensureDxf();
    if(!docCache[p.id]){const had=!!p.dxfExt;docCache[p.id]=dxfPrepare(await readText(blob),p);if(!had&&p.dxfExt)save()}
-   const d=docCache[p.id];cv.style.display='none';ensureCv2();w=d.w;h=d.h;
+   const d=docCache[p.id];cv.style.display='none';ensureCv2();w=d.w;h=d.h;setTimeout(()=>dxfNote(d),0);
   }else{
    const img=new Image();img.src=await urlFor(p.blobId);await img.decode();
    if(tok!==renderTok)return;
@@ -329,12 +329,13 @@ function viewerUpdate(){
   <span class="sp"></span>
   ${STORDER.map(k=>`<span class="chip s-${k} fchip ${ui.stFilter.has(k)?'on':''}" data-act="stf" data-k="${k}" title="Mostrar/ocultar">${ST[k]} ${cnt[k]}</span>`).join('')}
   <select data-chg="catF"><option value="">Todas as categorias</option>${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${ui.catFilter===k?'selected':''}>${c.l}</option>`).join('')}</select>
-  <button class="btn sec sm" data-act="sideT">☰ Lista</button>`;
+  <button class="btn sec sm" data-act="sideT">☰ Lista</button>${p.tipo==='dxf'?'<button class="btn sec sm" data-act="dxfList">🔎 Equipamentos do desenho</button>'+((docCache[p.id]?.clusters?.length||0)>1?`<button class="btn sec sm" data-act="dxfCl">🗺 Quadros (${docCache[p.id].clusters.length})</button>`:''):''}`;
  // marcadores
  const vis=here.filter(m=>{const it=item(m.itemId);return ui.stFilter.has(statusOf(it.id))&&(!ui.catFilter||it.cat===ui.catFilter)});
  const mk=$('#mks');if(mk)mk.innerHTML=vis.map(m=>{const it=item(m.itemId),s=statusOf(it.id);
   return `<div class="mk ${office?'office-drag':''}" data-id="${it.id}" style="left:${m.x*100}%;top:${m.y*100}%" title="${esc(it.campos.tag)} — ${ST[s]}"><i class="s-${s}">${CATS[it.cat].s}</i><b>${esc(it.campos.tag)}</b></div>`}).join('');
  $('#vp')?.classList.toggle('placing',!!ui.placing);
+ if(p.tipo==='dxf'){V.hl=null;drawDxfSoon()}
  // lateral
  const row=it=>{const s=statusOf(it.id);return `<div class="si" data-act="goItem" data-id="${it.id}"><span class="cfdot" style="background:${STC[s]}"></span><b>${esc(it.campos.tag)}</b><span class="muted">${CATS[it.cat].l}</span></div>`};
  let sd='';
@@ -364,7 +365,7 @@ async function readText(blob){const buf=await blob.arrayBuffer();try{return new 
 function dxfColor(c){let r=(c>>16)&255,g=(c>>8)&255,b=c&255;if(r>235&&g>235&&b>235)return '#000';
  const lum=(0.299*r+0.587*g+0.114*b)/255;if(lum>.72){r*=.55;g*=.55;b*=.55}return `rgb(${r|0},${g|0},${b|0})`}
 function rawScan(text){
- const L=text.split(/\r?\n/),out={ins:new Map(),hatches:[]};let sec='',cur=null,last=null;
+ const L=text.split(/\r?\n/),out={ins:new Map(),hatches:[],types:{}};let sec='',cur=null,last=null;
  const G=(g,c)=>{const x=g.find(a=>a[0]===c);return x?x[1]:undefined},N=(g,c,d=0)=>{const v=G(g,c);const n=parseFloat(v);return isNaN(n)?d:n};
  const rad=a=>a*Math.PI/180;
  const arc=(cx,cy,r,a0,a1,ccw)=>{if(!ccw)[a0,a1]=[a1,a0];a0=rad(a0);a1=rad(a1);while(a1<=a0)a1+=Math.PI*2;const k=Math.max(8,Math.ceil((a1-a0)/(Math.PI*2)*64)),o=[];for(let i=0;i<=k;i++){const a=a0+(a1-a0)*i/k;o.push([cx+r*Math.cos(a),cy+r*Math.sin(a)])}return o};
@@ -381,19 +382,30 @@ function rawScan(text){
      else if(t===3){const mx=e[11],my=e[21],a=Math.hypot(mx,my),b=a*e[40],rot=Math.atan2(my,mx);const a0=rad(e[50]||0);let a1=rad(e[51]??360);if(e[73]===0)[a1]=[a1];for(let q=0;q<=48;q++){const t2=a0+(a1-a0)*q/48,X=a*Math.cos(t2),Y=b*Math.sin(t2);pts.push([e[10]+X*Math.cos(rot)-Y*Math.sin(rot),e[20]+X*Math.sin(rot)+Y*Math.cos(rot)])}}}}
    if(pts.length>1)loops.push(pts)}
   return loops}
- const flush=()=>{if(!cur)return;const g=cur.g,t=cur.t;
+ const flush=()=>{if(!cur)return;const g=cur.g,t=cur.t;if(t!=='ATTRIB'&&t!=='SEQEND'&&t!=='VERTEX')out.types[t]=(out.types[t]||0)+1;
   if(t==='INSERT'){const o={name:G(g,2)||'',x:N(g,10),y:N(g,20),attrs:[]};const k=o.name+'|'+Math.round(o.x*100)+','+Math.round(o.y*100);(out.ins.get(k)||out.ins.set(k,[]).get(k)).push(o);last=o}
   else if(t==='ATTRIB'){if(last&&!(N(g,70)&1)){const al=N(g,72)||N(g,74);last.attrs.push({tag:G(g,2)||'',text:(G(g,1)||'').trim(),x:al&&G(g,11)!==undefined?N(g,11):N(g,10),y:al&&G(g,21)!==undefined?N(g,21):N(g,20),h:N(g,40,1),rot:N(g,50)})}}
-  else{last=null;if(t==='HATCH')out.hatches.push({ly:G(g,8)||'0',loops:hatch(g)})}
+  else{last=null;if(t==='HATCH')out.hatches.push({ly:G(g,8)||'0',ps:N(g,67)===1,loops:hatch(g)})}
   cur=null};
  for(let i=0;i+1<L.length;i+=2){const c=parseInt(L[i]),v=L[i+1].replace(/\r$/,'').trim();if(isNaN(c))continue;
   if(c===0){if(sec==='ENTITIES')flush();if(v==='SECTION'){}else if(v==='ENDSEC'){sec=''}else if(sec==='ENTITIES')cur={t:v,g:[]};continue}
   if(c===2&&!cur&&i>0&&L[i-2].trim()==='0'&&L[i-1].trim()==='SECTION'){sec=v;continue}
   if(cur)cur.g.push([c,v])}
  flush();return out}
+function clusterPts(pts){
+ let ax=1e308,ay=1e308,bx=-1e308,by=-1e308;for(const v of pts){if(v[0]<ax)ax=v[0];if(v[0]>bx)bx=v[0];if(v[1]<ay)ay=v[1];if(v[1]>by)by=v[1]}
+ const span=Math.max(bx-ax,by-ay)||1,s=span/300,K=(i,j)=>i*100003+j,cells=new Map();
+ for(const v of pts){const i=Math.floor((v[0]-ax)/s),j=Math.floor((v[1]-ay)/s),k=K(i,j);cells.set(k,(cells.get(k)||0)+1)}
+ const comp=new Map();let nc=0;const R=3;
+ for(const k0 of cells.keys()){if(comp.has(k0))continue;const id=nc++;const st=[k0];comp.set(k0,id);
+  while(st.length){const k=st.pop(),i=Math.round(k/100003),j=k-i*100003;
+   for(let di=-R;di<=R;di++)for(let dj=-R;dj<=R;dj++){const k2=K(i+di,j+dj);if(cells.has(k2)&&!comp.has(k2)){comp.set(k2,id);st.push(k2)}}}}
+ const cl=Array.from({length:nc},()=>({x0:1e308,y0:1e308,x1:-1e308,y1:-1e308,n:0}));
+ for(const v of pts){const c=cl[comp.get(K(Math.floor((v[0]-ax)/s),Math.floor((v[1]-ay)/s)))];if(v[0]<c.x0)c.x0=v[0];if(v[0]>c.x1)c.x1=v[0];if(v[1]<c.y0)c.y0=v[1];if(v[1]>c.y1)c.y1=v[1];c.n++}
+ cl.sort((a,b)=>b.n-a.n);const tot=pts.length;const keep=cl.filter(c=>c.n>=Math.max(5,tot*.003));return keep.length?keep:[cl[0]]}
 function dxfPrepare(text,pl){
  const dxf=new DxfParser().parseSync(text);if(!dxf)throw new Error('DXF inválido');
- let raw={ins:new Map(),hatches:[]};try{raw=rawScan(text)}catch(e){console.warn('rawScan',e)}
+ let raw={ins:new Map(),hatches:[],types:{}};try{raw=rawScan(text)}catch(e){console.warn('rawScan',e)}
  const recs=[];let curLy='0';
  const layers=dxf.tables?.layer?.layers||{},prims=[];
  const mul=(m,n)=>[m[0]*n[0]+m[2]*n[1],m[1]*n[0]+m[3]*n[1],m[0]*n[2]+m[2]*n[3],m[1]*n[2]+m[3]*n[3],m[0]*n[4]+m[2]*n[5]+m[4],m[1]*n[4]+m[3]*n[5]+m[5]];
@@ -432,30 +444,87 @@ function dxfPrepare(text,pl){
     case 'DIMENSION':{if(depth>8||!e.block)break;const b=dxf.blocks?.[e.block];if(b?.entities)walk(b.entities,m,null,depth+1);break}
    }}catch(err){}
   }}
- walk(dxf.entities,[1,0,0,1,0,0],null,0);
- raw.hatches.forEach(h=>{const L=layers[h.ly];if(L&&(L.visible===false||L.frozen))return;const c=dxfColor(L?.color??0);curLy=h.ly;h.loops.forEach(pts=>emit(pts,c))});
+ const allE=dxf.entities||[],modelE=allE.filter(e=>!e.inPaperSpace),paperE=allE.filter(e=>e.inPaperSpace);
+ walk(modelE,[1,0,0,1,0,0],null,0);let usedPaper=false;
+ if(!prims.length&&!raw.hatches.some(h=>!h.ps&&h.loops.length)&&paperE.length){walk(paperE,[1,0,0,1,0,0],null,0);usedPaper=true}
+ raw.hatches.filter(h=>h.ps===usedPaper).forEach(h=>{const L=layers[h.ly];if(L&&(L.visible===false||L.frozen))return;const c=dxfColor(L?.color??0);curLy=h.ly;h.loops.forEach(pts=>emit(pts,c))});
  if(!prims.length)throw new Error('O DXF não tem desenhos legíveis (linhas, polilinhas, arcos ou textos).');
  // caixa de cada elemento (para cortar o que está fora da tela) e extensão
  for(const q of prims){if(q.t==='l'){let a=1e308,b=1e308,c=-1e308,d2=-1e308;for(const v of q.p){if(v[0]<a)a=v[0];if(v[0]>c)c=v[0];if(v[1]<b)b=v[1];if(v[1]>d2)d2=v[1]}q.x0=a;q.y0=b;q.x1=c;q.y1=d2}
   else{const w=q.s.split('\n').reduce((m,s)=>Math.max(m,s.length),0)*q.h*.62,hh=q.h*1.25*q.s.split('\n').length;q.x0=q.x-q.h;q.y0=q.y-hh;q.x1=q.x+w+q.h;q.y1=q.y+q.h*1.2}}
+ const pts=[];prims.forEach(q=>{if(q.t==='l')q.p.forEach(v=>pts.push(v));else pts.push([q.x,q.y])});
+ const clusters=clusterPts(pts);
+ if(pl&&(pl.dxfV||0)<2){delete pl.dxfExt;pl.dxfV=2;pl.dxfCl=0}
  let ext=pl&&pl.dxfExt;
- if(!ext){
-  // região principal do desenho: ignora elementos soltos muito distantes
-  const pts=[];prims.forEach(q=>{if(q.t==='l')q.p.forEach(v=>pts.push(v));else pts.push([q.x,q.y])});
-  let ax=1e308,ay=1e308,bx=-1e308,by=-1e308;pts.forEach(v=>{if(v[0]<ax)ax=v[0];if(v[0]>bx)bx=v[0];if(v[1]<ay)ay=v[1];if(v[1]>by)by=v[1]});
-  const G=80,gw=(bx-ax)/G||1,gh=(by-ay)/G||1,cnt=new Uint32Array(G*G);
-  pts.forEach(v=>{const i=Math.min(G-1,Math.floor((v[0]-ax)/gw)),j=Math.min(G-1,Math.floor((v[1]-ay)/gh));cnt[j*G+i]++});
-  const thr=Math.max(3,pts.length*.0008);let x0=1e308,y0=1e308,x1=-1e308,y1=-1e308;
-  for(let j=0;j<G;j++)for(let i=0;i<G;i++)if(cnt[j*G+i]>=thr){x0=Math.min(x0,ax+i*gw);x1=Math.max(x1,ax+(i+1)*gw);y0=Math.min(y0,ay+j*gh);y1=Math.max(y1,ay+(j+1)*gh)}
-  if(x1<=x0||y1<=y0){x0=ax;x1=bx;y0=ay;y1=by}
-  const mx=(x1-x0)*.04||1,my=(y1-y0)*.04||1;ext={x0:x0-mx,y0:y0-my,w:x1-x0+2*mx,h:y1-y0+2*my};
-  if(pl)pl.dxfExt=ext;
- }
+ if(!ext){const c=clusters[Math.min(pl?.dxfCl||0,clusters.length-1)]||clusters[0],mx=(c.x1-c.x0)*.04||1,my=(c.y1-c.y0)*.04||1;
+  ext={x0:c.x0-mx,y0:c.y0-my,w:c.x1-c.x0+2*mx,h:c.y1-c.y0+2*my};if(pl)pl.dxfExt=ext}
  const inserts=recs.map(r=>{let a=1e308,b=1e308,c=-1e308,d2=-1e308;const texts=[];for(let i=r.i0;i<r.i1;i++){const q=prims[i];if(!q)continue;if(q.x0<a)a=q.x0;if(q.y0<b)b=q.y0;if(q.x1>c)c=q.x1;if(q.y1>d2)d2=q.y1;if(q.t==='t')texts.push(q.s.replace(/\s+/g,' ').trim())}
-  return a>c?null:{name:r.name,ly:r.ly,x0:a,y0:b,x1:c,y1:d2,attrs:r.attrs,texts,d:r.d}}).filter(Boolean);
- return{prims,x0:ext.x0,y0:ext.y0,w:ext.w,h:ext.h,inserts,texts:prims.filter(q=>q.t==='t'),nIns:recs.length};
+  return a>c?null:{name:r.name,ly:r.ly,x0:a,y0:b,x1:c,y1:d2,attrs:r.attrs,texts,d:r.d,i0:r.i0,i1:r.i1}}).filter(Boolean);
+ const SUP=new Set(['LINE','LWPOLYLINE','POLYLINE','CIRCLE','ARC','ELLIPSE','SPLINE','SOLID','3DFACE','LEADER','TEXT','MTEXT','INSERT','DIMENSION','HATCH','ATTDEF','POINT']);
+ const xrefs=Object.entries(dxf.blocks||{}).filter(([n,b])=>b&&b.xrefPath).map(([n,b])=>b.xrefPath||n);
+ const unsup=Object.entries(raw.types).filter(([t])=>!SUP.has(t)).sort((a,b)=>b[1]-a[1]);
+ const diag={model:modelE.length,paper:paperE.length,usedPaper,xrefs,unsup,nprims:prims.length,types:raw.types};
+ return{prims,x0:ext.x0,y0:ext.y0,w:ext.w,h:ext.h,inserts,texts:prims.filter(q=>q.t==='t'),nIns:recs.length,diag,clusters};
 }
+function dxfNote(d){
+ $('#dxfnote')?.remove();if(!d||!d.diag)return;const g=d.diag,msg=[];
+ if(g.xrefs.length)msg.push(`<b>Este DXF usa referências externas (XREF)</b>: ${g.xrefs.slice(0,4).map(esc).join(', ')}. O conteúdo delas <u>não está dentro do arquivo</u> e por isso não aparece. No AutoCAD: <i>XREF › selecione tudo › Vincular (Bind)</i> e salve o DXF de novo.`);
+ if(g.usedPaper)msg.push('Só foi encontrada a <b>folha (layout)</b>; o espaço do modelo está vazio. Abra o desenho no AutoCAD e salve o DXF com o desenho dentro do modelo.');
+ if(g.unsup.length)msg.push('Elementos ainda não suportados (ignorados): '+g.unsup.slice(0,6).map(([t,n])=>esc(t)+' ×'+n).join(', ')+'.');
+ if(g.nprims<40&&!g.xrefs.length&&!g.usedPaper)msg.push('Poucos elementos foram lidos ('+g.nprims+').');
+ if(!msg.length)return;
+ const n=document.createElement('div');n.id='dxfnote';const head=g.xrefs.length?`⚠ Desenho incompleto: ${g.xrefs.length} referência(s) externa(s) (XREF) não estão no arquivo`:g.usedPaper?'⚠ Só a folha (layout) foi encontrada':'ℹ Avisos sobre este DXF';
+ n.innerHTML=`<details><summary>${head} <span class="muted">— ver detalhes</span></summary>${msg.map(m=>'<div>'+m+'</div>').join('')}</details><button class="x" data-act="noteClose">✕</button>`;
+ $('#vp')?.append(n);n.addEventListener('pointerdown',e=>e.stopPropagation());n.addEventListener('pointerup',e=>e.stopPropagation())}
+ACT.noteClose=()=>$('#dxfnote')?.remove();
+function insStrings(d,r){const s=[...r.attrs.map(a=>a.text),...r.texts].filter(Boolean);if(s.length)return[...new Set(s)];
+ const cx=(r.x0+r.x1)/2,cy=(r.y0+r.y1)/2,R=Math.max(r.x1-r.x0,r.y1-r.y0)*1.6+1e-9,c=[];
+ for(const t of d.texts){const dist=Math.hypot((t.x0+t.x1)/2-cx,(t.y0+t.y1)/2-cy);if(dist<=R+(t.x1-t.x0)/2)c.push({s:t.s.replace(/\s+/g,' ').trim(),dist})}
+ return[...new Set(c.sort((a,b)=>a.dist-b.dist).slice(0,2).map(x=>x.s).filter(Boolean))]}
+ACT.dxfCl=()=>{const d=docCache[V.p.id];if(!d)return;const cur=V.p.dxfExt;
+ openModal(`<h3>Quadros do desenho</h3><p class="muted">Este DXF tem mais de um desenho separado (por exemplo, folha/carimbo e a planta). Escolha qual mostrar. O maior costuma ser a planta com os equipamentos.</p>
+ ${d.clusters.map((c,i)=>`<div class="si" data-act="dxfSetCl" data-i="${i}"><b>Quadro ${i+1}</b><span class="muted">${c.n.toLocaleString('pt-BR')} elementos · ${Math.round(c.x1-c.x0)} × ${Math.round(c.y1-c.y0)} un.</span>${cur&&Math.abs(cur.x0+cur.w*.5-(c.x0+c.x1)/2)<cur.w*.5+1e-6&&Math.abs(cur.w-(c.x1-c.x0)*1.08)<cur.w*.02?'<span class="chip s-conferido">em uso</span>':''}</div>`).join('')}
+ <div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`)};
+ACT.dxfSetCl=b=>{const p=V.p,n=S.marcas.filter(m=>m.plantaId===p.id).length;
+ if(n&&!confirm(`Trocar de quadro move a escala da planta e remove os ${n} ponto(s) já posicionados nela. Continuar?`))return;
+ S.marcas=S.marcas.filter(m=>m.plantaId!==p.id);delete p.dxfExt;p.dxfV=2;p.dxfCl=+b.dataset.i;delete docCache[p.id];save();closeModal();loadPage().then(()=>viewerUpdate())};
+ACT.dxfList=()=>{const d=docCache[V?.p.id];if(!d||!d.inserts)return;
+ const skip=n=>/^[*]|^A\$C|^_|^ARCH/i.test(n);
+ const rows=[];d.inserts.forEach((r,i)=>{if(r.d>0||skip(r.name))return;const strs=insStrings(d,r);const its=matchItems(strs);rows.push({r,i,strs:strs.slice(0,3),its})});
+ const grp=new Map();rows.forEach(x=>{(grp.get(x.r.name)||grp.set(x.r.name,[]).get(x.r.name)).push(x)});
+ const html=[...grp.entries()].sort((a,b)=>b[1].length-a[1].length).map(([name,l])=>`<details ${grp.size<=6?'open':''}><summary><b>${esc(name)}</b> <span class="muted">× ${l.length}</span></summary>${l.slice(0,60).map(x=>`<div class="si" data-act="dxfGo" data-i="${x.i}"><span>${x.strs.length?esc(x.strs.join(' · ')):'<i class="muted">sem texto</i>'}</span>${x.its.length?`<span class="chip s-${statusOf(x.its[0].id)}">${esc(x.its[0].campos.tag)}</span>`:''}</div>`).join('')}${l.length>60?'<div class="muted">… mais '+(l.length-60)+'</div>':''}</details>`).join('');
+ openModal(`<h3>Blocos / equipamentos no desenho</h3><p class="muted">Clique em um item para ir até ele na planta.</p><div style="max-height:60vh;overflow:auto">${html||'<div class="muted">Nenhum bloco encontrado neste desenho.</div>'}</div><div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`)};
+ACT.dxfGo=b=>{const d=docCache[V.p.id],r=d.inserts[+b.dataset.i];if(!r)return;closeModal();
+ const cx=(r.x0+r.x1)/2,cy=(r.y0+r.y1)/2,nx=(cx-d.x0)/d.w,ny=1-(cy-d.y0)/d.h,r2=$('#vp').getBoundingClientRect(),sc=Math.min(r2.width/(Math.max(r.x1-r.x0,1)*8),60);
+ const targetZ=Math.min(25,Math.max(V.z,(r2.width/V.W)*0.4*(d.w/Math.max(r.x1-r.x0,d.w/400))/8));
+ V.z=Math.min(25,Math.max(targetZ,V.z));V.tx=r2.width/2-nx*V.W*V.z;V.ty=r2.height/2-ny*V.H*V.z;applyT();
+ const strs=insStrings(d,r);V.pickHl=r;V.pick={x:nx,y:ny};drawDxfSoon();
+ showPick({name:r.name,layer:r.ly,strings:[...new Set(strs)].slice(0,8),items:matchItems(strs),tagAttr:r.attrs.find(a=>a.text)?.text})};
 function ensureCv2(){const vp=$('#vp');if(!vp)return null;let c=$('#cv2');if(!c){c=document.createElement('canvas');c.id='cv2';c.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none';vp.insertBefore(c,vp.firstChild);$('#stage')?.classList.add('dxf')}return c}
+function hlCompute(d){
+ if(!ui.catFilter)return null;const cat=CATS[ui.catFilter];if(!cat)return null;
+ const items=projItens(V.p.projetoId).filter(i=>i.cat===ui.catFilter),ck=[normT(cat.l),ui.catFilter].filter(c=>c.length>=3);
+ const ik=items.map(i=>({i,k:tagKey(i.campos.tag)})).filter(x=>x.k.length>=2),hit=k=>ik.find(x=>k===x.k||(x.k.length>=3&&k.includes(x.k)&&k.length<=x.k.length+12));
+ const out=[],used=new Set();
+ d.inserts.forEach(r=>{if(r.d>0)return;const strs=insStrings(d,r);let it=null;for(const s of strs){const m=hit(tagKey(s));if(m){it=m.i;break}}
+  const byName=ck.some(c=>normT(r.name).includes(c));if(it||byName){out.push({r,it,label:it?it.campos.tag:(strs[0]||r.name)});if(it)used.add(it.id)}});
+ const tu=new Set();
+ for(const t of d.texts){const m=hit(tagKey(t.s));if(m&&!used.has(m.i.id)){out.push({box:t,it:m.i,label:m.i.campos.tag});used.add(m.i.id);tu.add(t)}}
+ for(const t of d.texts){if(tu.has(t))continue;const k=tagKey(t.s);if(ck.some(c=>k.includes(c))){const l=t.s.split('\n')[0].replace(/\s+/g,' ').trim();out.push({box:t,it:null,label:l.length>26?l.slice(0,25)+'…':l})}}
+ return{list:out,items:items.length,found:used.size}}
+function drawHl(ctx,d,X,Y,sc){
+ if(!V.hl)V.hl=hlCompute(d)||{list:[],items:0,found:0};const h=V.hl;
+ for(const o of h.list){const b=o.r||o.box,pad=Math.max(b.x1-b.x0,b.y1-b.y0)*.3+5/sc;const col=o.it?STC[statusOf(o.it.id)]:'#1769e0';
+  if(o.r){ctx.strokeStyle=col;ctx.lineWidth=2.4;ctx.beginPath();for(let i=o.r.i0;i<o.r.i1;i++){const q=d.prims[i];if(!q||q.t!=='l')continue;ctx.moveTo(X(q.p[0][0]),Y(q.p[0][1]));for(let k=1;k<q.p.length;k++)ctx.lineTo(X(q.p[k][0]),Y(q.p[k][1]))}ctx.stroke()}
+  const x=X(b.x0-pad),y=Y(b.y1+pad),w=(b.x1-b.x0+2*pad)*sc,hh=(b.y1-b.y0+2*pad)*sc;
+  ctx.fillStyle=col+'26';ctx.strokeStyle=col;ctx.lineWidth=2;ctx.fillRect(x,y,w,hh);ctx.strokeRect(x,y,w,hh);
+  if((b.x1-b.x0+2*pad)*sc<70)continue;
+  ctx.font='700 12px Arial,sans-serif';const tw=ctx.measureText(o.label).width+12;ctx.fillStyle=col;ctx.beginPath();ctx.roundRect?ctx.roundRect(x,y-20,tw,18,5):ctx.rect(x,y-20,tw,18);ctx.fill();ctx.fillStyle='#fff';ctx.textBaseline='middle';ctx.fillText(o.label,x+6,y-11)}
+ return h}
+function hlNote(h){let n=$('#hlnote');if(!h||!ui.catFilter){n?.remove();return}
+ if(!n){n=document.createElement('div');n.id='hlnote';$('#vp')?.append(n);n.addEventListener('pointerdown',e=>e.stopPropagation())}
+ const cat=CATS[ui.catFilter].l;
+ n.innerHTML=h.list.length?`Filtro <b>${esc(cat)}</b>: ${h.list.length} destacado(s) no desenho${h.items?` · ${h.found} de ${h.items} item(ns) do projeto encontrados pela TAG`:''}.`:`Filtro <b>${esc(cat)}</b>: nenhum equipamento reconhecido no desenho (nem pela TAG do projeto, nem pelo nome do bloco).`}
 function drawDxfSoon(){if(!V||V.raf)return;V.raf=requestAnimationFrame(()=>{if(V)V.raf=0;drawDxfView()})}
 function drawDxfView(){
  const cv=$('#cv2');if(!cv||!V||V.p.tipo!=='dxf')return;const d=docCache[V.p.id];if(!d||!d.prims)return;
@@ -467,6 +536,7 @@ function drawDxfView(){
  ctx.save();ctx.beginPath();ctx.rect(V.tx,V.ty,V.W*V.z,V.H*V.z);ctx.clip();
  const vx0=d.x0+(0-ox)/sc,vx1=d.x0+(r.width-ox)/sc,vy1=d.y0+oy/sc,vy0=d.y0+(oy-r.height)/sc;
  ctx.lineWidth=1.2;ctx.lineJoin='round';ctx.lineCap='round';
+ if(ui.catFilter){if(!V.hl)V.hl=hlCompute(d)||{list:[],items:0,found:0};if(V.hl.list.length)ctx.globalAlpha=.3}
  let cur=null;const flush=()=>{if(cur!==null){ctx.stroke();cur=null}};
  for(const p of d.prims){
   if(p.x1<vx0||p.x0>vx1||p.y1<vy0||p.y0>vy1)continue;
@@ -476,7 +546,8 @@ function drawDxfView(){
   else{const px=p.h*sc;if(px<3.5)continue;flush();ctx.save();ctx.translate(X(p.x),Y(p.y));ctx.rotate(-p.rot);ctx.fillStyle=p.c;ctx.font=`${px}px Arial,sans-serif`;ctx.textBaseline='alphabetic';
    p.s.split('\n').forEach((ln,i)=>ctx.fillText(ln,0,i*px*1.2));ctx.restore()}
  }
- flush();
+ flush();ctx.globalAlpha=1;
+ if(ui.catFilter){const hh=drawHl(ctx,d,X,Y,sc);hlNote(hh)}else hlNote(null);
  const h=V.pickHl;if(h){ctx.fillStyle='rgba(23,105,224,.14)';ctx.strokeStyle='#1769e0';ctx.lineWidth=2;const a=X(h.x0),b=Y(h.y1),w=(h.x1-h.x0)*sc,hh=(h.y1-h.y0)*sc;ctx.fillRect(a,b,w,hh);ctx.strokeRect(a,b,w,hh)}
  ctx.restore();
 }
@@ -495,7 +566,7 @@ function pickDxf(e){
  let layer='',lineHit=null;
  if(!best){let bd=tol*.8;for(const p of d.prims){if(p.t!=='l'||x<p.x0-tol||x>p.x1+tol||y<p.y0-tol||y>p.y1+tol)continue;for(let i=1;i<p.p.length;i++){const a=p.p[i-1],b=p.p[i],dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy;let t=L2?((x-a[0])*dx+(y-a[1])*dy)/L2:0;t=Math.max(0,Math.min(1,t));const dd=Math.hypot(x-a[0]-t*dx,y-a[1]-t*dy);if(dd<bd){bd=dd;lineHit=p}}}
   if(lineHit)layer=lineHit.ly}
- const strings=[];if(best){best.r.attrs.forEach(a=>{if(a.text)strings.push(a.text)});best.r.texts.forEach(s=>strings.push(s))}
+ const strings=[];if(best)insStrings(d,best.r).forEach(s=>strings.push(s));
  near.slice(0,4).forEach(n=>strings.push(n.s));
  const uniq=[...new Set(strings.filter(Boolean))].slice(0,8);
  const items=matchItems(uniq);
