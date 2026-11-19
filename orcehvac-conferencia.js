@@ -78,7 +78,7 @@ const ui={view:'home',obraId:'',projetoId:'',disc:'',plantaId:'',pagina:1,placin
 let mode=localStorage.getItem('orcehvac.conf.modo')||'escritorio';
 let user=localStorage.getItem('orcehvac.conf.usuario')||'';
 let saveT=null;
-function save(){stamp();schedSync();clearTimeout(saveT);saveT=setTimeout(()=>kvSet('state',S).catch(e=>toast('Erro ao salvar: '+e)),150)}
+function save(){stamp();schedSync();clearTimeout(saveT);saveT=setTimeout(()=>kvSet('state',S).then(()=>snapMaybe()).catch(e=>toast('Erro ao salvar: '+e)),150)}
 const by=(arr,id)=>arr.find(x=>x.id===id);
 const obra=id=>by(S.obras,id),proj=id=>by(S.projetos,id),planta=id=>by(S.plantas,id),item=id=>by(S.itens,id);
 function logH(acao,ent,ref,desc,mud){S.hist.unshift({id:uid(),ts:new Date().toISOString(),user:user||'(sem nome)',acao,ent,ref,desc,mud:mud||[]});if(S.hist.length>3000)S.hist.length=3000}
@@ -111,7 +111,7 @@ function renderTop(){
  root.classList.toggle('office',off);
  $('#cfHead').innerHTML=`<div><div class="eyebrow">Obra e campo</div><h1>Comissionamento de obra</h1><p>${off?'Modo escritório: cadastre equipamentos, terminais, plantas e posicione os pontos.':'Modo campo: abra a planta, toque no ponto e registre o que foi instalado.'}</p></div>
   <div class="cf-tools"><button class="btn sec" data-act="user" title="Responsável pela conferência">👤 ${esc(user||'Definir nome')}</button>
-  <div class="seg"><button data-act="mode" data-v="campo" class="${mode==='campo'?'on':''}">Campo</button><button data-act="mode" data-v="escritorio" class="${mode==='escritorio'?'on':''}">Escritório</button></div></div>`;
+  <div class="seg"><button data-act="mode" data-v="campo" class="${mode==='campo'?'on':''}">Campo</button><button data-act="mode" data-v="escritorio" class="${mode==='escritorio'?'on':''}">${hasPw()&&!off?'🔒 ':''}Escritório</button></div>${hasPw()&&off?'<button class="btn sec" data-act="lockNow" title="Bloquear o escritório">🔒 Bloquear</button>':''}</div>`;
  $('#cfNav').innerHTML=`<button data-act="nav" data-v="home" class="${v==='home'||v==='plant'?'active':''}">Início</button>
   ${hasP?`<button data-act="nav" data-v="itens" class="${v==='itens'?'active':''}">Itens</button><button data-act="nav" data-v="report" class="${v==='report'?'active':''}">Relatório</button>`:''}
   ${off?`<button data-act="nav" data-v="admin" class="${v==='admin'?'active':''}">Administração</button>`:''}`;
@@ -131,7 +131,7 @@ function renderKpi(){
   <div class="kpi k-em_conferencia"><b>${c.em_conferencia}</b><span>Em conferência</span></div>
   <div class="kpi k-pct"><b>${pct}%</b><span>Conclusão (conferidos + divergentes)</span><div class="cfbar">${STORDER.map(seg).join('')}</div></div></div>`;
 }
-function render(){
+function render(){guardMode();
  if(!root)return;
  renderTop();renderKpi();
  const m=$('#cfMain');m.className=ui.view==='plant'?'flush':'';
@@ -165,7 +165,7 @@ function bindRoot(){
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&root&&root.isConnected){if($('#cfModal').innerHTML)closeModal();else if(ui.placing){ui.placing=null;viewerUpdate()}}});
 ACT.closeModal=()=>closeModal();
 ACT.nav=b=>{ui.view=b.dataset.v;closeModal();render()};
-ACT.mode=b=>{mode=b.dataset.v;localStorage.setItem('orcehvac.conf.modo',mode);if(mode==='campo'&&ui.view==='admin')ui.view='home';ui.placing=null;render()};
+ACT.mode=b=>{const v=b.dataset.v,ap=()=>{mode=v;localStorage.setItem('orcehvac.conf.modo',mode);if(mode==='campo'&&ui.view==='admin')ui.view='home';ui.placing=null;render()};if(v==='escritorio')askOffice(ap);else ap()};
 function askName(){return new Promise(res=>{
  openModal(`<h3>Responsável pela conferência</h3><div class="fld"><label for="f_nome">Seu nome</label><input id="f_nome" type="text" value="${esc(user)}" autocomplete="off"></div><div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" id="nmOk">Salvar</button></div>`);
  setTimeout(()=>$('#f_nome')?.focus(),30);
@@ -886,6 +886,8 @@ function filtersHTML(){
  <div><label>Pavimento</label><select data-chg="selPav"><option value="">Todos</option>${pavList(ui.projetoId).map(x=>`<option value="${esc(x)}" ${ui.pav===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
  <div><label>Planta</label><select data-chg="fPlanta"><option value="">Todas</option><option value="_none" ${ui.fPlanta==='_none'?'selected':''}>Sem ponto em planta</option>${pls.map(p=>`<option value="${p.id}" ${ui.fPlanta===p.id?'selected':''}>${esc(p.nome)}</option>`).join('')}</select></div>
  <div><label>Status</label><select data-chg="fStatus"><option value="">Todos</option>${STORDER.map(k=>`<option value="${k}" ${ui.fStatus===k?'selected':''}>${ST[k]}</option>`).join('')}</select></div></div>`}
+ACT.grpT=b=>{ui.open=ui.open||new Set();const k=b.dataset.k;ui.open.has(k)?ui.open.delete(k):ui.open.add(k);render()};
+ACT.grpAll=b=>{ui.open=new Set();if(b.dataset.v==='1')filteredItens().forEach(i=>ui.open.add(i.campos.ambiente||i.campos.localizacao||'Sem ambiente'));render()};
 CHG.agr=b=>{ui.agr=b.checked;render()};CHG.fCat=b=>{ui.fCat=b.value;render()};CHG.fPlanta=b=>{ui.fPlanta=b.value;render()};CHG.fStatus=b=>{ui.fStatus=b.value;render()};
 const onSearchInput=e=>{if(e.target.id==='fBusca'){ui.fBusca=e.target.value;clearTimeout(viewItens.t);viewItens.t=setTimeout(()=>{const pos=e.target.selectionStart;render();const n=$('#fBusca');if(n){n.focus();n.setSelectionRange(pos,pos)}},250)}};
 function viewItens(){
@@ -894,18 +896,38 @@ function viewItens(){
  $('#cfMain').innerHTML=`<div class="card"><div class="row" style="align-items:center"><h2 style="flex:3;margin:0">Itens do projeto — ${esc(proj(ui.projetoId).nome)}</h2>
   ${office?`<button class="btn" data-act="cadItens" style="flex:none">➕ Puxar do desenho</button><button class="btn sec" data-act="newItem" style="flex:none">+ Novo item</button><button class="btn sec" data-act="csvImp" style="flex:none">⬆ Importar Excel / CSV</button><button class="btn sec" data-act="csvTpl" style="flex:none">⬇ Modelo Excel</button><input type="file" id="csvF" accept=".xlsx,.xls,.xlsm,.csv,text/csv" style="display:none">`:''}</div>
   <div style="margin-top:10px">${filtersHTML()}</div></div>
-  <div class="card" style="padding:0;overflow:auto"><div class="grp-bar noprint"><label><input type="checkbox" data-chg="agr" ${ui.agr!==false?'checked':''}> Agrupar por ambiente</label><span class="muted">${list.length} item(ns)</span></div><table class="tbl-it"><thead><tr><th>Status</th><th>TAG</th><th>Categoria</th><th>Modelo</th><th>Medida</th><th>Vazão</th><th>Planta(s)</th><th></th></tr></thead><tbody>
+  <div class="card" style="padding:0;overflow:auto"><div class="grp-bar noprint"><label><input type="checkbox" data-chg="agr" ${ui.agr!==false?'checked':''}> Agrupar por ambiente</label><span class="grp-btns">${ui.agr!==false?'<button class="btn sec sm" data-act="grpAll" data-v="1">Expandir tudo</button><button class="btn sec sm" data-act="grpAll" data-v="0">Recolher tudo</button>':''}<span class="muted">${list.length} item(ns)</span></span></div><table class="tbl-it"><thead><tr><th>Status</th><th>TAG</th><th>Categoria</th><th>Modelo</th><th>Medida</th><th>Vazão</th><th>Planta(s)</th><th></th></tr></thead><tbody>
   ${(()=>{const nat=(a,b)=>String(a.campos.tag||'').localeCompare(String(b.campos.tag||''),'pt-BR',{numeric:true}),roomOf2=i=>i.campos.ambiente||i.campos.localizacao||'';
    const row=i=>{const s=statusOf(i.id);return `<tr class="click" data-act="openConfRow" data-id="${i.id}"><td><span class="chip s-${s}">${ST[s]}</span></td><td><b>${esc(i.campos.tag)}</b></td><td><span class="cat-pill">${CATS[i.cat].l}</span></td><td>${esc(i.campos.modelo||'')}</td><td>${esc(i.campos.dimensoes||'')}</td><td>${esc(i.campos.vazao||'')}</td><td>${esc(plantasDoItem(i.id).join(', ')||'— sem ponto —')}</td>
    <td style="white-space:nowrap">${office?`<button class="btn sec sm" data-act="editItem" data-id="${i.id}">✎</button> <button class="btn sec sm" data-act="histItem" data-id="${i.id}" title="Histórico">🕘</button> <button class="btn red sm" data-act="delItem" data-id="${i.id}">🗑</button>`:'<span class="muted">Conferir ›</span>'}</td></tr>`};
    if(!list.length)return`<tr><td colspan="8" class="muted">Nenhum item${S.itens.length?' com esses filtros':' cadastrado'}.</td></tr>`;
    if(ui.agr===false)return[...list].sort(nat).map(row).join('');
    const g=new Map();list.forEach(i=>{const k=roomOf2(i)||'Sem ambiente';(g.get(k)||g.set(k,[]).get(k)).push(i)});
-   return[...g.entries()].sort((a,b)=>(a[0]==='Sem ambiente')-(b[0]==='Sem ambiente')||a[0].localeCompare(b[0],'pt-BR')).map(([k,l])=>{const c={};l.forEach(i=>{c[CATS[i.cat].l]=(c[CATS[i.cat].l]||0)+1});
-    return`<tr class="grp"><td colspan="8">📍 <b>${esc(k)}</b> <span class="muted">· ${l.length} item(ns): ${Object.entries(c).map(([a,b])=>b+' '+esc(a)).join(' · ')}</span></td></tr>`+l.sort(nat).map(row).join('')}).join('')})()}
+   ui.open=ui.open||new Set();const auto=!!(ui.fBusca||ui.fCat||ui.fStatus||ui.fPlanta);
+   return[...g.entries()].sort((a,b)=>(a[0]==='Sem ambiente')-(b[0]==='Sem ambiente')||a[0].localeCompare(b[0],'pt-BR')).map(([k,l])=>{const c={},st={};l.forEach(i=>{c[CATS[i.cat].l]=(c[CATS[i.cat].l]||0)+1;const z=statusOf(i.id);st[z]=(st[z]||0)+1});
+    const op=auto||ui.open.has(k);
+    return`<tr class="grp ${op?'open':''}" data-act="grpT" data-k="${esc(k)}"><td colspan="8"><span class="grp-ar">${op?'▾':'▸'}</span> 📍 <b>${esc(k)}</b> <span class="grp-n">${l.length}</span> <span class="muted">${Object.entries(c).map(([a,b])=>b+' '+esc(a)).join(' · ')}</span><span class="grp-st">${st.pendente?`<button class="btn sm grp-ok" data-act="batchOk" data-k="${esc(k)}" title="Marcar como conferidos os itens deste ambiente que estão iguais ao projeto">✔ Tudo confere (${st.pendente})</button>`:''}<span class="grp-pct">${Math.round(((st.conferido||0)+(st.divergente||0))/l.length*100)}%</span>${STORDER.filter(z=>st[z]).map(z=>`<span class="chip s-${z}">${st[z]}</span>`).join('')}</span></td></tr>`+(op?l.sort(nat).map(row).join(''):'')}).join('')})()}
   </tbody></table></div>`;
  const f=$('#csvF');if(f)f.onchange=()=>{importPlanilha(f.files[0]);f.value=''};
 }
+
+/* ===== CONFERÊNCIA EM LOTE POR AMBIENTE: "tudo confere" ===== */
+const ambKey=i=>i.campos.ambiente||i.campos.localizacao||'Sem ambiente';
+ACT.batchOk=b=>{const k=b.dataset.k,l=filteredItens().filter(i=>ambKey(i)===k&&statusOf(i.id)==='pendente');if(!l.length)return;
+ const nat=(a,c)=>String(a.campos.tag||'').localeCompare(String(c.campos.tag||''),'pt-BR',{numeric:true});l.sort(nat);V_batch={k,ids:l.map(i=>i.id)};
+ openModal(`<h3>✔ Tudo confere — ${esc(k)}</h3>
+ <p class="muted">Marque os itens que, <b>na obra, estão iguais ao projeto</b> (modelo, medida, vazão…). Desmarque os que tiverem alguma diferença: esses você confere um a um. Os marcados ficam como <b>conferidos</b>, com seu nome e a data.</p>
+ <div class="batch-list">${l.map(i=>`<label class="batch-r"><input type="checkbox" class="bo" data-id="${i.id}" checked><span><b>${esc(i.campos.tag)}</b> <span class="cat-pill">${CATS[i.cat].l}</span><br><span class="muted">${esc([i.campos.modelo,i.campos.dimensoes,i.campos.vazao].filter(Boolean).join(' · ')||'sem detalhes')}</span></span></label>`).join('')}</div>
+ <div class="mfoot"><button class="btn sec" data-act="batchAll" data-v="0">Desmarcar todos</button><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" data-act="batchGo">Confirmar <span id="bo_n">${l.length}</span> conferido(s)</button></div>`);
+ $('#cfModal').onchange=e=>{if(e.target.classList?.contains('bo'))$('#bo_n').textContent=$$('.bo:checked').length}};
+let V_batch=null;
+ACT.batchAll=b=>{const v=b.dataset.v==='1';$$('.bo').forEach(x=>x.checked=v);b.dataset.v=v?'0':'1';b.textContent=v?'Desmarcar todos':'Marcar todos';$('#bo_n').textContent=$$('.bo:checked').length};
+ACT.batchGo=async()=>{const ids=$$('.bo:checked').map(x=>x.dataset.id);if(!ids.length){toast('Nenhum item marcado');return}
+ if(!await needUser()){toast('Informe seu nome para registrar a conferência');return}
+ await snapNow('antes da conferência em lote');const now=new Date().toISOString();
+ for(const id of ids){const it=item(id);if(!it)continue;const campos={};for(const k of CATS[it.cat].conf)if((it.campos[k]||'').trim())campos[k]=it.campos[k];
+  S.conf[id]={campos,obs:'Conferência em lote: instalado igual ao projeto.',fotos:[],estado:'finalizada',resp:user,data:now}}
+ logH('conferiu','conferencia','',`Conferência em lote: ${ids.length} item(ns) de ${V_batch?V_batch.k:'ambiente'} conferidos`);save();closeModal();render();toast('✔ '+ids.length+' item(ns) conferido(s)')};
 ACT.openConfRow=(b,e)=>{if(e.target.closest('button'))return;openConf(b.dataset.id)};
 ACT.newItem=()=>itemForm();
 ACT.editItem=b=>itemForm(b.dataset.id);
@@ -1097,10 +1119,59 @@ function adminEmp(){const c=cfg();const fl=(k,l)=>`<div class="fld"><label for="
  <div class="fld"><label for="e_logo">Logo da empresa (PNG ou JPG)</label><input id="e_logo" type="file" accept="image/*"></div>
  ${c.logo?'<p class="muted">Logo já cadastrado. <button class="btn red sm" data-act="empLogoDel">Remover logo</button></p>':''}
  <div class="row"><button class="btn" data-act="empSave" style="flex:none">Salvar</button></div></div>`}
+
+/* ===== TRAVA DO ESCRITÓRIO (senha) — o engenheiro em campo só confere; cadastrar/editar exige senha ===== */
+const sha256=(()=>{let K=null,H0=null;const init=()=>{K=[];H0=[];let n=2,c=0;const fr=x=>Math.floor((x-Math.floor(x))*4294967296);while(c<64){let p=true;for(let i=2;i*i<=n;i++)if(n%i===0){p=false;break}if(p){if(c<8)H0.push(fr(Math.sqrt(n)));K.push(fr(Math.cbrt(n)));c++}n++}};
+ const rr=(x,n)=>(x>>>n)|(x<<(32-n));
+ return s=>{if(!K)init();const b=new TextEncoder().encode(s),l=b.length,nb=((l+9+63)>>6)<<6,m=new Uint8Array(nb);m.set(b);m[l]=128;const dv0=new DataView(m.buffer);dv0.setUint32(nb-4,(l*8)>>>0);dv0.setUint32(nb-8,Math.floor(l*8/4294967296));
+  const H=H0.slice(),w=new Uint32Array(64);
+  for(let o=0;o<nb;o+=64){for(let i=0;i<16;i++)w[i]=dv0.getUint32(o+i*4);for(let i=16;i<64;i++){const a=w[i-15],c=w[i-2];w[i]=(w[i-16]+(rr(a,7)^rr(a,18)^(a>>>3))+w[i-7]+(rr(c,17)^rr(c,19)^(c>>>10)))>>>0}
+   let [a,b2,c,d,e,f,g,h]=H;for(let i=0;i<64;i++){const t1=(h+(rr(e,6)^rr(e,11)^rr(e,25))+((e&f)^(~e&g))+K[i]+w[i])>>>0,t2=((rr(a,2)^rr(a,13)^rr(a,22))+((a&b2)^(a&c)^(b2&c)))>>>0;h=g;g=f;f=e;e=(d+t1)>>>0;d=c;c=b2;b2=a;a=(t1+t2)>>>0}
+   [a,b2,c,d,e,f,g,h].forEach((v,i)=>{H[i]=(H[i]+v)>>>0})}
+  return H.map(x=>x.toString(16).padStart(8,'0')).join('')}})();
+const hashPw=(pw,salt)=>{let h=sha256(salt+'|'+pw);for(let i=0;i<4000;i++)h=sha256(h+salt+pw);return h};
+const rnd=n=>{const a=new Uint8Array(n);crypto.getRandomValues(a);return a};
+const hasPw=()=>!!(S.cfg&&S.cfg.pw&&S.cfg.pw.h);
+const unlocked=()=>{try{return sessionStorage.getItem('orcehvac.conf.unl')==='1'}catch(e){return false}};
+const locked=()=>hasPw()&&!unlocked();
+const pwOk=(pw,k)=>{const p=cfg().pw;return !!p&&hashPw(String(pw||''),p.s)===p[k||'h']};
+function guardMode(){if(mode==='escritorio'&&locked()){mode='campo';localStorage.setItem('orcehvac.conf.modo','campo');if(ui.view==='admin')ui.view='home'}}
+function askOffice(then,msg){if(!locked()){then();return}
+ openModal(`<h3>🔒 Área do escritório</h3><p class="muted">${esc(msg||'Para cadastrar ou editar é preciso a senha do escritório. Em campo, o engenheiro continua conferindo normalmente.')}</p>
+ <div class="fld"><label for="pw_in">Senha</label><input id="pw_in" type="password" autocomplete="off"></div><div id="pw_err" style="color:#dc2626;font-weight:600;min-height:20px"></div>
+ <div class="mfoot"><a href="#" data-act="pwForgot" style="margin-right:auto;font-size:13px">Esqueci a senha</a><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" id="pw_ok">Entrar</button></div>`);
+ const go=()=>{const v=$('#pw_in').value;if(pwOk(v)){try{sessionStorage.setItem('orcehvac.conf.unl','1')}catch(e){}closeModal();then()}else{$('#pw_err').textContent='Senha incorreta.';$('#pw_in').select()}};
+ $('#pw_ok').onclick=go;$('#pw_in').onkeydown=e=>{if(e.key==='Enter')go()};setTimeout(()=>$('#pw_in')?.focus(),30)}
+ACT.pwForgot=(b,e)=>{e?.preventDefault();
+ openModal(`<h3>Esqueci a senha</h3><p class="muted">Digite o <b>código de recuperação</b> que apareceu quando a senha foi criada e defina uma nova senha.</p>
+ <div class="fld"><label for="rc_in">Código de recuperação</label><input id="rc_in" type="text" autocomplete="off" style="text-transform:uppercase"></div>
+ <div class="fld"><label for="rc_n1">Nova senha</label><input id="rc_n1" type="password" autocomplete="off"></div><div class="fld"><label for="rc_n2">Repita a nova senha</label><input id="rc_n2" type="password" autocomplete="off"></div>
+ <div id="pw_err" style="color:#dc2626;font-weight:600;min-height:20px"></div><div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" id="rc_ok">Redefinir</button></div>`);
+ $('#rc_ok').onclick=()=>{const c=$('#rc_in').value.trim().toUpperCase().replace(/[\s-]/g,''),a=$('#rc_n1').value,b2=$('#rc_n2').value;
+  if(!pwOk(c,'r')){$('#pw_err').textContent='Código de recuperação incorreto.';return}if(a.length<4){$('#pw_err').textContent='A senha precisa ter pelo menos 4 caracteres.';return}if(a!==b2){$('#pw_err').textContent='As senhas não conferem.';return}
+  setPw(a,true)}};
+function setPw(pw,keepRec){const c=cfg(),old=c.pw,s=Array.from(rnd(8),x=>x.toString(16).padStart(2,'0')).join('');
+ const AL='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',code=Array.from(rnd(10),x=>AL[x%AL.length]).join('');
+ c.pw={s,h:hashPw(pw,s),r:hashPw(code,s)};try{sessionStorage.setItem('orcehvac.conf.unl','1')}catch(e){}
+ logH('editou','config','','Definiu/alterou a senha do escritório');save();
+ openModal(`<h3>✅ Senha do escritório definida</h3><p>Anote o <b>código de recuperação</b> abaixo e guarde em local seguro. Ele é a única forma de redefinir a senha se você esquecer.</p>
+  <div style="font-size:28px;font-weight:800;letter-spacing:.12em;text-align:center;padding:16px;border-radius:12px;background:var(--soft);margin:10px 0">${code.slice(0,5)}-${code.slice(5)}</div>
+  <p class="muted">Ele só aparece agora. Os tablets e computadores que sincronizam com a pasta da equipe passam a usar a mesma senha.</p><div class="mfoot"><button class="btn" data-act="closeModal">Anotei</button></div>`);render()}
+ACT.lockNow=()=>{try{sessionStorage.removeItem('orcehvac.conf.unl')}catch(e){}guardMode();render()};
+ACT.pwSet=()=>{const a=$('#sg_n1').value,b=$('#sg_n2').value;if(a.length<4){toast('A senha precisa ter pelo menos 4 caracteres.');return}if(a!==b){toast('As senhas não conferem.');return}setPw(a)};
+ACT.pwChange=()=>{const o=$('#sg_o').value,a=$('#sg_n1').value,b=$('#sg_n2').value;if(!pwOk(o)){toast('Senha atual incorreta.');return}if(a.length<4){toast('A senha precisa ter pelo menos 4 caracteres.');return}if(a!==b){toast('As senhas não conferem.');return}setPw(a)};
+ACT.pwRemove=()=>{if(!pwOk($('#sg_o').value)){toast('Digite a senha atual para remover.');return}if(!confirm('Remover a senha? Qualquer pessoa poderá usar o modo Escritório.'))return;delete cfg().pw;logH('editou','config','','Removeu a senha do escritório');save();toast('Senha removida');render()};
+function adminSeg(){const on=hasPw();
+ return `<div class="card"><h3>🔒 Trava do escritório</h3>
+ <p class="muted">${on?'A senha está <b>ativa</b>. Em campo (tablet), o engenheiro só visualiza e confere. Para cadastrar, editar, importar ou excluir é preciso a senha.':'Defina uma senha para que o modo <b>Escritório / Administração</b> fique bloqueado. O engenheiro em campo continua conferindo, mas não consegue alterar o cadastro.'}</p>
+ ${on?'<div class="fld"><label for="sg_o">Senha atual</label><input id="sg_o" type="password" autocomplete="off"></div>':''}
+ <div class="two"><div class="fld"><label for="sg_n1">${on?'Nova senha':'Senha'}</label><input id="sg_n1" type="password" autocomplete="off"></div><div class="fld"><label for="sg_n2">Repita a senha</label><input id="sg_n2" type="password" autocomplete="off"></div></div>
+ <div class="row">${on?'<button class="btn" data-act="pwChange" style="flex:none">Alterar senha</button><button class="btn sec" data-act="lockNow" style="flex:none">🔒 Bloquear agora</button><button class="btn red" data-act="pwRemove" style="flex:none">Remover senha</button>':'<button class="btn" data-act="pwSet" style="flex:none">Definir senha</button>'}</div>
+ <p class="muted" style="margin-top:10px;font-size:12px">Esta trava evita alterações acidentais e uso por quem não é do escritório. Ela não substitui a proteção do computador ou da pasta compartilhada.</p></div>`}
 function viewAdmin(){
  const t=ui.atab;
- let h=`<div class="tabs">${[['cad','Obras, projetos e plantas'],['hist','Histórico de alterações'],['emp','Empresa e assinatura'],['bkp','Backup e equipe']].map(([k,l])=>`<button data-act="atab" data-k="${k}" class="${t===k?'on':''}">${l}</button>`).join('')}</div>`;
- if(t==='cad')h+=adminCad();else if(t==='hist')h+=`<div class="card"><h3>Histórico de alterações</h3><div class="hist">${histHTML(S.hist.slice(0,400))}</div></div>`;else if(t==='emp')h+=adminEmp();else h+=adminBkp();
+ let h=`<div class="tabs">${[['cad','Obras, projetos e plantas'],['hist','Histórico de alterações'],['emp','Empresa e assinatura'],['bkp','Backup e equipe'],['seg','🔒 Senha']].map(([k,l])=>`<button data-act="atab" data-k="${k}" class="${t===k?'on':''}">${l}</button>`).join('')}</div>`;
+ if(t==='cad')h+=adminCad();else if(t==='hist')h+=`<div class="card"><h3>Histórico de alterações</h3><div class="hist">${histHTML(S.hist.slice(0,400))}</div></div>`;else if(t==='emp')h+=adminEmp();else if(t==='seg')h+=adminSeg();else h+=adminBkp();
  $('#cfMain').innerHTML=h;renderKpi();bindImp();
 }
 ACT.atab=b=>{ui.atab=b.dataset.k;render()};
@@ -1136,6 +1207,23 @@ ACT.delPl=b=>{const p=planta(b.dataset.id);if(!confirm(`Excluir a planta "${p.no
 ACT.posPl=b=>openPlanta(b.dataset.id);
 
 /* ----- Backup / pacotes ----- */
+
+/* ===== CÓPIAS AUTOMÁTICAS (a cada 30 min de uso + antes de importar/restaurar/apagar) ===== */
+const SNAP_KEEP=24;
+async function snapNow(reason){try{if(!S.obras.length)return;const now=new Date(),meta={ts:now.toISOString(),reason:reason||'automática',obras:S.obras.length,itens:S.itens.length,conf:Object.keys(S.conf).length};
+ const id='snap_'+now.toISOString().replace(/[-:T]/g,'').slice(0,14)+String(now.getMilliseconds()).padStart(3,'0');
+ await blobSet(id,new Blob([JSON.stringify({meta,state:S})],{type:'application/json'}));localStorage.setItem('orcehvac.conf.lastSnap',String(Date.now()));
+ const ids=(await blobIds()).map(String).filter(x=>x.startsWith('snap_')).sort();for(const o of ids.slice(0,Math.max(0,ids.length-SNAP_KEEP)))await blobDel(o)}catch(e){console.warn('snap',e)}}
+function snapMaybe(){const l=+localStorage.getItem('orcehvac.conf.lastSnap')||0;if(Date.now()-l>=30*60e3)snapNow('automática')}
+async function snapList(){const out=[];for(const id of (await blobIds()).map(String).filter(x=>x.startsWith('snap_')).sort().reverse()){try{const b=await blobGet(id);if(!b)continue;const j=JSON.parse(await b.text());out.push({id,meta:j.meta})}catch(e){}}return out}
+ACT.snapView=async()=>{const l=await snapList();
+ openModal(`<h3>🕘 Cópias automáticas</h3><p class="muted">O programa guarda sozinho cópias do cadastro (a cada 30 minutos de uso e antes de importar, restaurar ou apagar). Se algo foi apagado ou importado errado, volte a uma delas. As cópias ficam neste aparelho; faça também o backup em arquivo.</p>
+ <div style="max-height:55vh;overflow:auto">${l.map(x=>`<div class="si"><span><b>${fdt(x.meta.ts)}</b> <span class="muted">· ${esc(x.meta.reason)}</span><br><span class="muted">${x.meta.obras} obra(s) · ${x.meta.itens} item(ns) · ${x.meta.conf} conferência(s)</span></span><button class="btn sm sec" data-act="snapRest" data-id="${x.id}">Restaurar</button></div>`).join('')||'<div class="muted">Ainda não há cópias. A primeira é criada depois de alguns minutos de uso.</div>'}</div>
+ <div class="mfoot"><button class="btn sec" data-act="snapNowBtn">Criar cópia agora</button><button class="btn" data-act="closeModal">Fechar</button></div>`)};
+ACT.snapNowBtn=async()=>{await snapNow('manual');toast('Cópia criada');ACT.snapView()};
+ACT.snapRest=async b=>{if(!confirm('Voltar o cadastro para esta cópia? O estado atual é guardado antes, então dá para desfazer.'))return;
+ const blob=await blobGet(b.dataset.id);if(!blob)return toast('Cópia não encontrada');const j=JSON.parse(await blob.text());await snapNow('antes de restaurar');
+ S={...S,...j.state};S.cfg=S.cfg||{};S.del=S.del||{};Object.keys(docCache).forEach(k=>delete docCache[k]);resetSigs();await kvSet('state',S);closeModal();ui.obraId=ui.projetoId=ui.plantaId='';ui.view='home';render();toast('Cadastro restaurado da cópia de '+fdt(j.meta.ts))};
 function adminBkp(){
  const dk=!!desk(),lb=localStorage.getItem('orcehvac.conf.lastBkp'),ls=localStorage.getItem('orcehvac.conf.lastSync');
  return (dk?`<div class="card"><h3>Backup completo (dados, plantas e fotos)</h3><p>Copia tudo para uma pasta de sua escolha (pendrive, OneDrive, rede). Último backup: <b>${lb?fdt(lb):'nunca feito'}</b>.</p><div class="row"><button class="btn" data-act="bkpFolder" style="flex:none">💾 Fazer backup completo</button><button class="btn sec" data-act="restFolder" style="flex:none">Restaurar de um backup…</button></div></div>
@@ -1144,7 +1232,7 @@ function adminBkp(){
  <div class="row"><div><label>Obra para exportar</label><select id="expObra">${S.obras.map(o=>`<option value="${o.id}" ${o.id===ui.obraId?'selected':''}>${esc(o.nome)}</option>`).join('')}</select></div>
  <button class="btn" data-act="expObra" style="flex:none">⬇ Exportar obra</button>
  <button class="btn sec" data-act="impPkg" style="flex:none">⬆ Importar arquivo</button><input type="file" id="impF" accept=".json,application/json" style="display:none"></div></div>
- <div class="card"><h3>Backup completo</h3><div class="row"><button class="btn sec" data-act="expAll" style="flex:none">⬇ Backup de tudo</button><button class="btn red" data-act="wipe" style="flex:none">Apagar todos os dados</button></div>
+ <div class="card"><h3>Backup completo</h3><div class="row"><button class="btn sec" data-act="expAll" style="flex:none">⬇ Backup de tudo (arquivo)</button><button class="btn sec" data-act="snapView" style="flex:none">🕘 Cópias automáticas</button><button class="btn red" data-act="wipe" style="flex:none">Apagar todos os dados</button></div>
  <p class="muted">Recomendação: faça backup periodicamente. Os dados ficam na pasta de dados do OrceHVAC (subpasta conferencia); inclua-a nas cópias de segurança do computador.</p><p class="muted">Versão do aplicativo: ${APP_VERSION}</p></div>`}
 async function packObras(obraIds){
  const projetos=S.projetos.filter(p=>obraIds.includes(p.obraId)),pids=projetos.map(p=>p.id);
@@ -1153,11 +1241,12 @@ async function packObras(obraIds){
  const bl={};for(const id of [...plantas.map(p=>p.blobId),...Object.values(conf).flatMap(c=>c.fotos)]){const b=await blobGet(id);if(b)bl[id]=await blobToDataURL(b)}
  return {formato:'conferencia-hvac',versao:1,exportado:new Date().toISOString(),obras:S.obras.filter(o=>obraIds.includes(o.id)),projetos,plantas,itens,marcas,conf,blobs:bl,hist:S.hist.filter(h=>iids.has(h.ref)||pids.includes(h.ref)||obraIds.includes(h.ref))}}
 ACT.expObra=async()=>{const id=$('#expObra').value;if(!id)return toast('Cadastre uma obra primeiro');toast('Gerando arquivo…');const p=await packObras([id]);download(`obra_${normT(obra(id).nome)||'obra'}.json`,JSON.stringify(p),'application/json')};
-ACT.expAll=async()=>{toast('Gerando backup…');const p=await packObras(S.obras.map(o=>o.id));download('backup_conferencia_hvac.json',JSON.stringify(p),'application/json')};
+ACT.expAll=async()=>{toast('Gerando backup…');const p=await packObras(S.obras.map(o=>o.id));download('backup_conferencia_hvac_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(p),'application/json');localStorage.setItem('orcehvac.conf.lastBkp',new Date().toISOString());render()};
 ACT.impPkg=()=>$('#impF').click();
 function bindImp(){const f=$('#impF');if(!f)return;f.onchange=async()=>{const file=f.files[0];if(!file)return;try{await importPkg(JSON.parse(await file.text()));render();toast('Arquivo importado')}catch(e){toast('Arquivo inválido: '+e.message)}f.value=''}}
 async function importPkg(p){
  if(p.formato!=='conferencia-hvac')throw new Error('não é um arquivo do sistema');
+ await snapNow('antes de importar arquivo');
  const up=(arr,x)=>{const i=arr.findIndex(y=>y.id===x.id);i>=0?arr[i]=x:arr.push(x)};
  for(const [id,u] of Object.entries(p.blobs||{})){await blobSet(id,await dataURLToBlob(u));urlCache.delete(id)}
  p.obras.forEach(x=>up(S.obras,x));p.projetos.forEach(x=>up(S.projetos,x));p.plantas.forEach(x=>{up(S.plantas,x);delete docCache[x.id]});p.itens.forEach(x=>up(S.itens,x));
@@ -1168,7 +1257,7 @@ async function importPkg(p){
  (p.hist||[]).forEach(h=>{if(!S.hist.some(x=>x.id===h.id))S.hist.push(h)});S.hist.sort((a,b)=>b.ts.localeCompare(a.ts));
  save();if(!ui.obraId&&S.obras[0])ui.obraId='';}
 ACT.wipe=async()=>{if(!confirm('Apagar TODOS os dados deste aparelho? Faça backup antes.')||!confirm('Tem certeza? Esta ação não pode ser desfeita.'))return;
- for(const k of await blobIds())await blobDel(k);S={obras:[],projetos:[],plantas:[],itens:[],marcas:[],conf:{},hist:[],cfg:{},del:{}};resetSigs();ui.obraId=ui.projetoId=ui.plantaId='';await kvSet('state',S);render();toast('Dados apagados')};
+ await snapNow('antes de apagar tudo');for(const k of await blobIds())if(!String(k).startsWith('snap_'))await blobDel(k);S={obras:[],projetos:[],plantas:[],itens:[],marcas:[],conf:{},hist:[],cfg:{},del:{}};resetSigs();ui.obraId=ui.projetoId=ui.plantaId='';await kvSet('state',S);render();toast('Dados apagados')};
 
 /* ---------- Montagem no OrceHVAC ---------- */
 let loaded=false,pendingItem=null;
@@ -1184,7 +1273,7 @@ async function start(){
  if(pendingItem){const id=pendingItem;pendingItem=null;if(item(id))openConf(id)}
 }
 /* ---------- Visão geral (painel do comissionamento) ---------- */
-function bkpWarn(){if(!S.obras.length||!desk())return '';const lb=localStorage.getItem('orcehvac.conf.lastBkp');const days=lb?(Date.now()-new Date(lb))/864e5:999;if(days<7||syncOn)return '';return `<div class="panel" style="margin-bottom:16px;border-left:4px solid #dc2626"><b>Faça um backup completo.</b> ${lb?'Último há '+Math.floor(days)+' dia(s).':'Nenhum backup feito ainda.'} <button class="btn sm" data-ov="bkp">Abrir backup</button></div>`}
+function bkpWarn(){if(!S.obras.length)return '';const lb=localStorage.getItem('orcehvac.conf.lastBkp');const days=lb?(Date.now()-new Date(lb))/864e5:999;if(days<7||syncOn)return '';return `<div class="panel" style="margin-bottom:16px;border-left:4px solid #dc2626;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span><b>Faça um backup.</b> ${lb?'O último foi há '+Math.floor(days)+' dia(s).':'Nenhum backup em arquivo foi feito ainda.'} Guarde o arquivo no WhatsApp, e-mail ou pendrive.</span><button class="btn sm" data-ov="${desk()?'bkp':'bkpdl'}" style="margin-left:auto">${desk()?'Abrir backup':'⬇ Baixar backup agora'}</button></div>`}
 async function overview(){
  if(!await ensureLoaded())return;
  const c=document.getElementById('content');
@@ -1236,7 +1325,7 @@ async function overview(){
  ov.querySelector('#ovSel').onchange=e=>{ui.ovObra=e.target.value;overview()};
  ov.addEventListener('click',e=>{const b=e.target.closest('[data-ov]');if(!b)return;const a=b.dataset.ov;
   if(a==='work')openWork({});else if(a==='obra')openWork({obraId:b.dataset.id});else if(a==='item')openWork({itemId:b.dataset.id});
-  else if(a==='bkp'){ui.atab='bkp';mode='escritorio';localStorage.setItem('orcehvac.conf.modo',mode);openWork({view:'admin'})}else if(a==='report')openWork({view:'report'});else if(a==='admin'){mode='escritorio';localStorage.setItem('orcehvac.conf.modo',mode);openWork({view:'admin'})}});
+  else if(a==='bkp'){askOffice(()=>{ui.atab='bkp';mode='escritorio';localStorage.setItem('orcehvac.conf.modo',mode);openWork({view:'admin'})})}else if(a==='bkpdl')ACT.expAll();else if(a==='report')openWork({view:'report'});else if(a==='admin'){askOffice(()=>{mode='escritorio';localStorage.setItem('orcehvac.conf.modo',mode);openWork({view:'admin'})})}});
 }
 function openWork(o){
  if(o.itemId){const it=item(o.itemId);if(it){const p=proj(it.projetoId);ui.obraId=p?.obraId||'';ui.projetoId=it.projetoId;ui.pav='';ui.disc='';ui.plantaId='';ui.view='home';pendingItem=it.id}}

@@ -196,3 +196,17 @@
 .cf .cad-tags .pk-chip,.cf .cad-chips .pk-chip{background:var(--soft);color:var(--text);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600}
 .cf .cad-chips .pk-chip.c{background:var(--blue);color:#fff}
 .cf .mbox .pk-l{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:12px 0 6px}
+.cf table.tbl-it tr.grp{cursor:pointer}
+.cf table.tbl-it tr.grp:hover td{background:var(--soft-2,#dfe9f8)}
+.cf table.tbl-it tr.grp td{display:table-cell}
+.cf .grp-ar{display:inline-block;width:16px;color:var(--blue);font-weight:700}
+.cf .grp-n{background:var(--blue);color:#fff;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:700;margin:0 8px 0 4px}
+.cf .grp-st{float:right;display:inline-flex;gap:5px}
+.cf .grp-btns{display:flex;gap:8px;align-items:center}
+.cf .btn.grp-ok{background:#16a34a;color:#fff;border:0;padding:3px 12px;font-size:12px;margin-right:4px}
+.cf .btn.grp-ok:hover{background:#15803d}
+.cf .grp-pct{font-weight:700;font-size:12px;color:var(--muted);align-self:center;margin-right:2px}
+.cf .batch-list{max-height:50vh;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:10px}
+.cf .batch-r{display:flex;gap:12px;align-items:flex-start;padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer;margin:0}
+.cf .batch-r:last-child{border:0}.cf .batch-r:hover{background:var(--soft)}
+.cf .batch-r input{width:20px;height:20px;margin-top:2px;flex:none}
