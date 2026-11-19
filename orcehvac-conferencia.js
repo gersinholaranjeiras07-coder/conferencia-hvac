@@ -316,6 +316,7 @@ function markerClick(id){
 ACT.mkEdit=b=>{closeModal();itemForm(b.dataset.id)};
 ACT.mkConf=b=>{closeModal();openConf(b.dataset.id)};
 ACT.mkDel=b=>{const id=b.dataset.id;S.marcas=S.marcas.filter(m=>m.itemId!==id);logH('editou','marcador',id,`Removeu o ponto de ${item(id)?.campos.tag}`);save();closeModal();viewerUpdate();renderKpi()};
+document.addEventListener('input',e=>{if(e.target&&e.target.id==='dxq'&&V){clearTimeout(V.qt);V.qt=setTimeout(()=>{V.q=e.target.value.trim();V.hl=null;const n=$('#hlnote');if(n)n.dataset.k='';drawDxfSoon()},250)}});
 function viewerUpdate(){
  if(!V||!$('#tb'))return;
  const office=mode==='escritorio',p=V.p;
@@ -329,7 +330,7 @@ function viewerUpdate(){
   <span class="sp"></span>
   ${STORDER.map(k=>`<span class="chip s-${k} fchip ${ui.stFilter.has(k)?'on':''}" data-act="stf" data-k="${k}" title="Mostrar/ocultar">${ST[k]} ${cnt[k]}</span>`).join('')}
   <select data-chg="catF"><option value="">Todas as categorias</option>${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${ui.catFilter===k?'selected':''}>${c.l}</option>`).join('')}</select>
-  <button class="btn sec sm" data-act="sideT">☰ Lista</button>${p.tipo==='dxf'?'<button class="btn sec sm" data-act="dxfList">🔎 Equipamentos do desenho</button>'+((docCache[p.id]?.clusters?.length||0)>1?`<button class="btn sec sm" data-act="dxfCl">🗺 Quadros (${docCache[p.id].clusters.length})</button>`:''):''}`;
+  <button class="btn sec sm" data-act="sideT">☰ Lista</button>${p.tipo==='dxf'?'<input id="dxq" class="dxq" type="search" placeholder="Buscar texto no desenho…" value="'+esc(V.q||'')+'"><button class="btn sec sm" data-act="dxfList">🔎 Equipamentos do desenho</button>'+((docCache[p.id]?.clusters?.length||0)>1?`<button class="btn sec sm" data-act="dxfCl">🗺 Quadros (${docCache[p.id].clusters.length})</button>`:''):''}`;
  // marcadores
  const vis=here.filter(m=>{const it=item(m.itemId);return ui.stFilter.has(statusOf(it.id))&&(!ui.catFilter||it.cat===ui.catFilter)});
  const mk=$('#mks');if(mk)mk.innerHTML=vis.map(m=>{const it=item(m.itemId),s=statusOf(it.id);
@@ -407,6 +408,14 @@ function dxfPrepare(text,pl){
  const dxf=new DxfParser().parseSync(text);if(!dxf)throw new Error('DXF inválido');
  let raw={ins:new Map(),hatches:[],types:{}};try{raw=rawScan(text)}catch(e){console.warn('rawScan',e)}
  const recs=[];let curLy='0';
+ const mc=document.createElement('canvas').getContext('2d');mc.font='100px Arial,sans-serif';
+ const mkT=(x,y,h,rot,s,c,ly,al,vv)=>{const ls=s.split('\n'),n=ls.length;let W=0;for(const l of ls)W=Math.max(W,mc.measureText(l).width/100*h);
+  // vv: 'top'|'mid'|'bot'|'base' -> ajusta a linha de base da primeira linha
+  const lh=h*1.2;let by=y;if(vv==='top')by=y-h*.9;else if(vv==='mid')by=y+n*lh/2-h*.9;else if(vv==='bot')by=y+(n-1)*lh+h*.25;
+  // retângulo local (x para a direita, y para cima) em relação ao ponto de ancoragem
+  const lx0=al==='center'?-W/2:al==='right'?-W:0,lx1=lx0+W,ly1=h*.95,ly0=-(n-1)*lh-h*.25,co=Math.cos(rot),si=Math.sin(rot);
+  const cs=[[lx0,ly0],[lx1,ly0],[lx1,ly1],[lx0,ly1]].map(([a,b])=>[x+a*co-b*si,by+a*si+b*co]);
+  return{t:'t',x,y:by,h,rot,s,c,ly,al:al||'left',x0:Math.min(...cs.map(q=>q[0])),x1:Math.max(...cs.map(q=>q[0])),y0:Math.min(...cs.map(q=>q[1])),y1:Math.max(...cs.map(q=>q[1]))}};
  const layers=dxf.tables?.layer?.layers||{},prims=[];
  const mul=(m,n)=>[m[0]*n[0]+m[2]*n[1],m[1]*n[0]+m[3]*n[1],m[0]*n[2]+m[2]*n[3],m[1]*n[2]+m[3]*n[3],m[0]*n[4]+m[2]*n[5]+m[4],m[1]*n[4]+m[3]*n[5]+m[5]];
  const ap=(m,x,y)=>[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]];
@@ -429,8 +438,11 @@ function dxfPrepare(text,pl){
     case 'SPLINE':{const v=(e.fitPoints&&e.fitPoints.length>1?e.fitPoints:e.controlPoints)||[];emit(v.map(p=>ap(m,p.x,p.y)),c);break}
     case 'SOLID':case '3DFACE':{const v=e.points||e.vertices||[];if(v.length>=3){const o=v.map(p=>ap(m,p.x,p.y));if(e.type==='SOLID'&&o.length===4)[o[2],o[3]]=[o[3],o[2]];o.push(o[0]);emit(o,c)}break}
     case 'LEADER':emit((e.vertices||[]).map(p=>ap(m,p.x,p.y)),c);break;
-    case 'TEXT':case 'MTEXT':case 'ATTRIB':{const pos=e.startPoint||e.position;if(!pos)break;let tx=String(e.text||'');if(e.type==='MTEXT')tx=tx.replace(/\\P/g,'\n').replace(/\\[A-Za-z][^;]*;/g,'').replace(/[{}]/g,'');
-     const h=(e.textHeight||e.height||1)*Math.hypot(m[0],m[1]);const rot=Math.atan2(m[1],m[0])+(e.rotation||0)*Math.PI/180;const [x,y]=ap(m,pos.x,pos.y);if(tx.trim())prims.push({t:'t',x,y,h,rot,s:tx,c,ly:curLy});break}
+    case 'TEXT':case 'MTEXT':case 'ATTRIB':{let pos=e.startPoint||e.position;if(!pos)break;let tx=String(e.text||'');if(e.type==='MTEXT')tx=tx.replace(/\\P/g,'\n').replace(/\\[A-Za-z][^;]*;/g,'').replace(/[{}]/g,'');
+     const h=(e.textHeight||e.height||1)*Math.hypot(m[0],m[1]);const rot=Math.atan2(m[1],m[0])+(e.rotation||0)*Math.PI/180;let al='left',vv='base';
+     if(e.type==='MTEXT'){const a=e.attachmentPoint||1;al=[1,4,7].includes(a)?'left':[2,5,8].includes(a)?'center':'right';vv=a<=3?'top':a<=6?'mid':'bot'}
+     else if((e.halign||e.valign)&&e.endPoint){pos=e.endPoint;al=[1,4].includes(e.halign)?'center':e.halign===2?'right':'left';vv=e.valign===3?'top':e.valign===2?'mid':e.valign===1?'bot':'base'}
+     const [x,y]=ap(m,pos.x,pos.y);if(tx.trim())prims.push(mkT(x,y,h,rot,tx,c,curLy,al,vv));break}
     case 'INSERT':{if(depth>8)break;const b=dxf.blocks?.[e.name];if(!b||!b.entities)break;const bp=b.position||{x:0,y:0};
      const sx=e.xScale||1,sy=e.yScale||1,r=(e.rotation||0)*Math.PI/180,co=Math.cos(r),si=Math.sin(r);
      const cols=e.columnCount||1,rows=e.rowCount||1;const i0=prims.length,insLy=e.layer||'0';
@@ -439,7 +451,7 @@ function dxfPrepare(text,pl){
       const T=[co*sx,si*sx,-si*sy,co*sy,px,py];let M=mul(m,mul(T,[1,0,0,1,-bp.x,-bp.y]));
       walk(b.entities,M,colOf(e,inh),depth+1)}
      const attrs=[];if(depth===0){const k=e.name+'|'+Math.round(e.position.x*100)+','+Math.round(e.position.y*100);const lst=raw.ins.get(k);const o=lst&&lst.shift();
-      if(o)o.attrs.forEach(a=>{attrs.push({tag:a.tag,text:a.text});if(a.text)prims.push({t:'t',x:a.x,y:a.y,h:a.h,rot:a.rot*Math.PI/180,s:a.text,c:dxfColor(colOf(e,inh)),ly:insLy})})}
+      if(o)o.attrs.forEach(a=>{attrs.push({tag:a.tag,text:a.text});if(a.text)prims.push(mkT(a.x,a.y,a.h,a.rot*Math.PI/180,a.text,dxfColor(colOf(e,inh)),insLy,'left','base'))})}
      recs.push({name:e.name,ly:insLy,i0,i1:prims.length,attrs,d:depth});curLy=insLy;break}
     case 'DIMENSION':{if(depth>8||!e.block)break;const b=dxf.blocks?.[e.block];if(b?.entities)walk(b.entities,m,null,depth+1);break}
    }}catch(err){}
@@ -451,7 +463,7 @@ function dxfPrepare(text,pl){
  if(!prims.length)throw new Error('O DXF não tem desenhos legíveis (linhas, polilinhas, arcos ou textos).');
  // caixa de cada elemento (para cortar o que está fora da tela) e extensão
  for(const q of prims){if(q.t==='l'){let a=1e308,b=1e308,c=-1e308,d2=-1e308;for(const v of q.p){if(v[0]<a)a=v[0];if(v[0]>c)c=v[0];if(v[1]<b)b=v[1];if(v[1]>d2)d2=v[1]}q.x0=a;q.y0=b;q.x1=c;q.y1=d2}
-  else{const w=q.s.split('\n').reduce((m,s)=>Math.max(m,s.length),0)*q.h*.62,hh=q.h*1.25*q.s.split('\n').length;q.x0=q.x-q.h;q.y0=q.y-hh;q.x1=q.x+w+q.h;q.y1=q.y+q.h*1.2}}
+  }
  const pts=[];prims.forEach(q=>{if(q.t==='l')q.p.forEach(v=>pts.push(v));else pts.push([q.x,q.y])});
  const clusters=clusterPts(pts);
  if(pl&&(pl.dxfV||0)<2){delete pl.dxfExt;pl.dxfV=2;pl.dxfCl=0}
@@ -499,32 +511,39 @@ ACT.dxfGo=b=>{const d=docCache[V.p.id],r=d.inserts[+b.dataset.i];if(!r)return;cl
  const targetZ=Math.min(25,Math.max(V.z,(r2.width/V.W)*0.4*(d.w/Math.max(r.x1-r.x0,d.w/400))/8));
  V.z=Math.min(25,Math.max(targetZ,V.z));V.tx=r2.width/2-nx*V.W*V.z;V.ty=r2.height/2-ny*V.H*V.z;applyT();
  const strs=insStrings(d,r);V.pickHl=r;V.pick={x:nx,y:ny};drawDxfSoon();
- showPick({name:r.name,layer:r.ly,strings:[...new Set(strs)].slice(0,8),items:matchItems(strs),tagAttr:r.attrs.find(a=>a.text)?.text})};
+ V.pickLbl=r.name+(strs[0]?' · '+strs[0]:'');showPick({title:V.pickLbl,name:r.name,layer:r.ly,strings:[...new Set(strs)].slice(0,8),items:matchItems(strs),tagAttr:r.attrs.find(a=>a.text)?.text});drawDxfSoon()};
 function ensureCv2(){const vp=$('#vp');if(!vp)return null;let c=$('#cv2');if(!c){c=document.createElement('canvas');c.id='cv2';c.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none';vp.insertBefore(c,vp.firstChild);$('#stage')?.classList.add('dxf')}return c}
+const normS=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
 function hlCompute(d){
- if(!ui.catFilter)return null;const cat=CATS[ui.catFilter];if(!cat)return null;
- const items=projItens(V.p.projetoId).filter(i=>i.cat===ui.catFilter),ck=[normT(cat.l),ui.catFilter].filter(c=>c.length>=3);
+ const cat=ui.catFilter?CATS[ui.catFilter]:null;if(!cat&&!V.q)return null;
+ const qk=V.q?normS(V.q):'';
+ const items=cat?projItens(V.p.projetoId).filter(i=>i.cat===ui.catFilter):[],ck=[...(cat?[normS(cat.l),ui.catFilter]:[]),...((cfg().kw&&cat&&cfg().kw[ui.catFilter])||[]).map(normS),...(qk?[qk]:[])].filter(c=>c.length>=2);
  const ik=items.map(i=>({i,k:tagKey(i.campos.tag)})).filter(x=>x.k.length>=2),hit=k=>ik.find(x=>k===x.k||(x.k.length>=3&&k.includes(x.k)&&k.length<=x.k.length+12));
  const out=[],used=new Set();
  d.inserts.forEach(r=>{if(r.d>0)return;const strs=insStrings(d,r);let it=null;for(const s of strs){const m=hit(tagKey(s));if(m){it=m.i;break}}
-  const byName=ck.some(c=>normT(r.name).includes(c));if(it||byName){out.push({r,it,label:it?it.campos.tag:(strs[0]||r.name)});if(it)used.add(it.id)}});
+  const byName=ck.some(c=>normS(r.name).includes(c));if(it||byName){out.push({r,it,label:it?it.campos.tag:(strs[0]||r.name)});if(it)used.add(it.id)}});
  const tu=new Set();
  for(const t of d.texts){const m=hit(tagKey(t.s));if(m&&!used.has(m.i.id)){out.push({box:t,it:m.i,label:m.i.campos.tag});used.add(m.i.id);tu.add(t)}}
- for(const t of d.texts){if(tu.has(t))continue;const k=tagKey(t.s);if(ck.some(c=>k.includes(c))){const l=t.s.split('\n')[0].replace(/\s+/g,' ').trim();out.push({box:t,it:null,label:l.length>26?l.slice(0,25)+'…':l})}}
+ for(const t of d.texts){if(tu.has(t))continue;const k=normS(t.s);if(ck.some(c=>k.includes(c))){const l=t.s.split('\n')[0].replace(/\s+/g,' ').trim();out.push({box:t,it:null,label:l.length>26?l.slice(0,25)+'…':l})}}
  return{list:out,items:items.length,found:used.size}}
 function drawHl(ctx,d,X,Y,sc){
  if(!V.hl)V.hl=hlCompute(d)||{list:[],items:0,found:0};const h=V.hl;
- for(const o of h.list){const b=o.r||o.box,pad=Math.max(b.x1-b.x0,b.y1-b.y0)*.3+5/sc;const col=o.it?STC[statusOf(o.it.id)]:'#1769e0';
+ for(const o of h.list){const b=o.r||o.box,pad=o.r?Math.max(b.x1-b.x0,b.y1-b.y0)*.3+5/sc:Math.min(b.y1-b.y0,b.x1-b.x0)*.12+2.5/sc;const col=o.it?STC[statusOf(o.it.id)]:'#1769e0';
   if(o.r){ctx.strokeStyle=col;ctx.lineWidth=2.4;ctx.beginPath();for(let i=o.r.i0;i<o.r.i1;i++){const q=d.prims[i];if(!q||q.t!=='l')continue;ctx.moveTo(X(q.p[0][0]),Y(q.p[0][1]));for(let k=1;k<q.p.length;k++)ctx.lineTo(X(q.p[k][0]),Y(q.p[k][1]))}ctx.stroke()}
   const x=X(b.x0-pad),y=Y(b.y1+pad),w=(b.x1-b.x0+2*pad)*sc,hh=(b.y1-b.y0+2*pad)*sc;
   ctx.fillStyle=col+'26';ctx.strokeStyle=col;ctx.lineWidth=2;ctx.fillRect(x,y,w,hh);ctx.strokeRect(x,y,w,hh);
-  if((b.x1-b.x0+2*pad)*sc<70)continue;
+  if((b.x1-b.x0+2*pad)*sc<46)continue;
   ctx.font='700 12px Arial,sans-serif';const tw=ctx.measureText(o.label).width+12;ctx.fillStyle=col;ctx.beginPath();ctx.roundRect?ctx.roundRect(x,y-20,tw,18,5):ctx.rect(x,y-20,tw,18);ctx.fill();ctx.fillStyle='#fff';ctx.textBaseline='middle';ctx.fillText(o.label,x+6,y-11)}
  return h}
-function hlNote(h){let n=$('#hlnote');if(!h||!ui.catFilter){n?.remove();return}
- if(!n){n=document.createElement('div');n.id='hlnote';$('#vp')?.append(n);n.addEventListener('pointerdown',e=>e.stopPropagation())}
- const cat=CATS[ui.catFilter].l;
- n.innerHTML=h.list.length?`Filtro <b>${esc(cat)}</b>: ${h.list.length} destacado(s) no desenho${h.items?` · ${h.found} de ${h.items} item(ns) do projeto encontrados pela TAG`:''}.`:`Filtro <b>${esc(cat)}</b>: nenhum equipamento reconhecido no desenho (nem pela TAG do projeto, nem pelo nome do bloco).`}
+function hlNote(h){let n=$('#hlnote');if(!h||!(ui.catFilter||V.q)){n?.remove();return}
+ if(!n){n=document.createElement('div');n.id='hlnote';$('#vp')?.append(n);['pointerdown','pointerup','wheel'].forEach(t=>n.addEventListener(t,e=>e.stopPropagation()))}
+ const cat=ui.catFilter?CATS[ui.catFilter].l:'',kws=(cat&&cfg().kw&&cfg().kw[ui.catFilter])||[];
+ const msg=h.list.length?`${cat?`Filtro <b>${esc(cat)}</b>: `:''}${V.q?`busca “${esc(V.q)}”: `:''}<b>${h.list.length}</b> destacado(s) no desenho${h.items?` · ${h.found} de ${h.items} item(ns) do projeto achados pela TAG`:''}.`
+  :`${cat?`Filtro <b>${esc(cat)}</b>: `:''}nada encontrado no desenho${V.q?` para “${esc(V.q)}”`:''}. Este DXF pode não ter essa palavra escrita; use a busca acima com o texto que aparece no desenho (ex.: FC, AR-04) e salve como palavra-chave.`;
+ const key=msg+'|'+kws.join(',')+'|'+!!V.q;if(n.dataset.k===key)return;n.dataset.k=key;
+ n.innerHTML=msg+(kws.length?`<div class="muted" style="margin-top:4px">Palavras-chave de ${esc(cat)}: ${kws.map(esc).join(', ')} <a href="#" data-act="kwClear">limpar</a></div>`:'')+(cat&&V.q?`<div style="margin-top:6px"><button class="btn sm" data-act="kwSave">Salvar “${esc(V.q)}” como palavra-chave de ${esc(cat)}</button></div>`:'')}
+ACT.kwSave=()=>{const k=ui.catFilter,q=(V.q||'').trim();if(!k||!q)return;const c=cfg();c.kw=c.kw||{};c.kw[k]=[...new Set([...(c.kw[k]||[]),q])];save();V.hl=null;const n=$('#hlnote');if(n)n.dataset.k='';drawDxfSoon();toast('Palavra-chave salva em '+CATS[k].l)};
+ACT.kwClear=(b,e)=>{e?.preventDefault();const k=ui.catFilter;if(k&&cfg().kw){delete cfg().kw[k];save();V.hl=null;const n=$('#hlnote');if(n)n.dataset.k='';drawDxfSoon()}};
 function drawDxfSoon(){if(!V||V.raf)return;V.raf=requestAnimationFrame(()=>{if(V)V.raf=0;drawDxfView()})}
 function drawDxfView(){
  const cv=$('#cv2');if(!cv||!V||V.p.tipo!=='dxf')return;const d=docCache[V.p.id];if(!d||!d.prims)return;
@@ -536,19 +555,20 @@ function drawDxfView(){
  ctx.save();ctx.beginPath();ctx.rect(V.tx,V.ty,V.W*V.z,V.H*V.z);ctx.clip();
  const vx0=d.x0+(0-ox)/sc,vx1=d.x0+(r.width-ox)/sc,vy1=d.y0+oy/sc,vy0=d.y0+(oy-r.height)/sc;
  ctx.lineWidth=1.2;ctx.lineJoin='round';ctx.lineCap='round';
- if(ui.catFilter){if(!V.hl)V.hl=hlCompute(d)||{list:[],items:0,found:0};if(V.hl.list.length)ctx.globalAlpha=.3}
+ if(ui.catFilter||V.q){if(!V.hl)V.hl=hlCompute(d)||{list:[],items:0,found:0};if(V.hl.list.length)ctx.globalAlpha=.3}
  let cur=null;const flush=()=>{if(cur!==null){ctx.stroke();cur=null}};
  for(const p of d.prims){
   if(p.x1<vx0||p.x0>vx1||p.y1<vy0||p.y0>vy1)continue;
   if(p.t==='l'){if((p.x1-p.x0)*sc<.4&&(p.y1-p.y0)*sc<.4)continue;
    if(cur!==p.c){flush();ctx.strokeStyle=p.c;ctx.beginPath();cur=p.c}
    const v=p.p;ctx.moveTo(X(v[0][0]),Y(v[0][1]));for(let i=1;i<v.length;i++)ctx.lineTo(X(v[i][0]),Y(v[i][1]))}
-  else{const px=p.h*sc;if(px<3.5)continue;flush();ctx.save();ctx.translate(X(p.x),Y(p.y));ctx.rotate(-p.rot);ctx.fillStyle=p.c;ctx.font=`${px}px Arial,sans-serif`;ctx.textBaseline='alphabetic';
+  else{const px=p.h*sc;if(px<3.5)continue;flush();ctx.save();ctx.translate(X(p.x),Y(p.y));ctx.rotate(-p.rot);ctx.fillStyle=p.c;ctx.font=`${px}px Arial,sans-serif`;ctx.textBaseline='alphabetic';ctx.textAlign=p.al||'left';
    p.s.split('\n').forEach((ln,i)=>ctx.fillText(ln,0,i*px*1.2));ctx.restore()}
  }
  flush();ctx.globalAlpha=1;
- if(ui.catFilter){const hh=drawHl(ctx,d,X,Y,sc);hlNote(hh)}else hlNote(null);
+ if(ui.catFilter||V.q){const hh=drawHl(ctx,d,X,Y,sc);hlNote(hh)}else hlNote(null);
  const h=V.pickHl;if(h){ctx.fillStyle='rgba(23,105,224,.14)';ctx.strokeStyle='#1769e0';ctx.lineWidth=2;const a=X(h.x0),b=Y(h.y1),w=(h.x1-h.x0)*sc,hh=(h.y1-h.y0)*sc;ctx.fillRect(a,b,w,hh);ctx.strokeRect(a,b,w,hh)}
+ if(V.pickLbl&&h){const tx=V.pickLbl;ctx.font='700 14px Arial,sans-serif';const tw=ctx.measureText(tx).width+22,cx=(X(h.x0)+X(h.x1))/2;let lx=Math.max(8,Math.min(r.width-tw-8,cx-tw/2)),ly=Y(h.y1)-38;if(ly<6)ly=Y(h.y0)+14;ctx.save();ctx.shadowColor='rgba(0,0,0,.35)';ctx.shadowBlur=10;ctx.fillStyle='#0a2a52';ctx.beginPath();ctx.roundRect?ctx.roundRect(lx,ly,tw,28,8):ctx.rect(lx,ly,tw,28);ctx.fill();ctx.restore();ctx.fillStyle='#fff';ctx.textBaseline='middle';ctx.textAlign='left';ctx.fillText(tx,lx+11,ly+14)}
  ctx.restore();
 }
 /* clique na planta DXF: mostra nome do bloco/equipamento e a TAG */
@@ -557,35 +577,44 @@ function matchItems(strings){const keys=strings.map(tagKey).filter(k=>k.length>=
  for(const it of projItens(V.p.projetoId)){const tk=tagKey(it.campos.tag);if(tk.length<2)continue;
   if(keys.some(k=>k===tk||(tk.length>=3&&k.includes(tk)&&k.length<=tk.length+12)))found.set(it.id,it)}
  return[...found.values()]}
+function prettyLabel(s){const ls=String(s||'').split('\n').map(x=>x.replace(/\s+/g,' ').trim()).filter(Boolean);const title=ls[0]||'';
+ const dims=[...new Set((title.match(/\d+(?:[.,]\d+)?\s*[x×X]\s*\d+(?:[.,]\d+)?/g)||[]).map(x=>x.replace(/\s+/g,'')))];
+ const cat=Object.entries(CATS).find(([k,c])=>normS(title).includes(normS(c.l)));
+ return{title,extra:ls.slice(1),dims,cat:cat?cat[0]:''}}
 function pickDxf(e){
  const d=docCache[V.p.id];if(!d||!d.prims)return;const nm=normCoords(e);if(!nm)return;
  const sc=V.W*V.z/d.w,x=d.x0+nm.x*d.w,y=d.y0+(1-nm.y)*d.h,tol=10/sc;
  let best=null;for(const r of d.inserts){if(x<r.x0-tol||x>r.x1+tol||y<r.y0-tol||y>r.y1+tol)continue;const a=(r.x1-r.x0)*(r.y1-r.y0);if(r.d>0&&a>d.w*d.h*.2)continue;if(!best||a<best.a)best={r,a}}
- const near=[];for(const t of d.texts){const cx=(t.x0+t.x1)/2,cy=(t.y0+t.y1)/2,dist=Math.hypot(cx-x,cy-y);if(dist<tol*3||(x>=t.x0&&x<=t.x1&&y>=t.y0&&y<=t.y1))near.push({s:t.s.replace(/\s+/g,' ').trim(),dist})}
- near.sort((a,b)=>a.dist-b.dist);
+ // texto mais provável: o que está sob o clique, ou o rótulo mais próximo
+ let tHit=null,bs=1e308;const maxd=70/sc;
+ for(const t of d.texts){const dx=Math.max(t.x0-x,0,x-t.x1),dy=Math.max(t.y0-y,0,y-t.y1),dist=Math.hypot(dx,dy);if(dist>maxd)continue;const sc2=dist===0?-1+(t.x1-t.x0)*(t.y1-t.y0)/(d.w*d.h):dist;if(sc2<bs){bs=sc2;tHit=t}}
  let layer='',lineHit=null;
- if(!best){let bd=tol*.8;for(const p of d.prims){if(p.t!=='l'||x<p.x0-tol||x>p.x1+tol||y<p.y0-tol||y>p.y1+tol)continue;for(let i=1;i<p.p.length;i++){const a=p.p[i-1],b=p.p[i],dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy;let t=L2?((x-a[0])*dx+(y-a[1])*dy)/L2:0;t=Math.max(0,Math.min(1,t));const dd=Math.hypot(x-a[0]-t*dx,y-a[1]-t*dy);if(dd<bd){bd=dd;lineHit=p}}}
+ if(!best&&!tHit){let bd=tol*.8;for(const p of d.prims){if(p.t!=='l'||x<p.x0-tol||x>p.x1+tol||y<p.y0-tol||y>p.y1+tol)continue;for(let i=1;i<p.p.length;i++){const a=p.p[i-1],b=p.p[i],dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy;let t=L2?((x-a[0])*dx+(y-a[1])*dy)/L2:0;t=Math.max(0,Math.min(1,t));const dd=Math.hypot(x-a[0]-t*dx,y-a[1]-t*dy);if(dd<bd){bd=dd;lineHit=p}}}
   if(lineHit)layer=lineHit.ly}
  const strings=[];if(best)insStrings(d,best.r).forEach(s=>strings.push(s));
- near.slice(0,4).forEach(n=>strings.push(n.s));
+ if(tHit)tHit.s.split('\n').forEach(s=>strings.push(s.trim()));
  const uniq=[...new Set(strings.filter(Boolean))].slice(0,8);
  const items=matchItems(uniq);
- V.pickHl=best?best.r:null;V.pick={x:nm.x,y:nm.y};drawDxfSoon();
- showPick({name:best?.r.name,layer:best?.r.ly||layer,strings:uniq,items,tagAttr:best?.r.attrs.find(a=>/tag|ident|nome|codigo/i.test(a.tag)&&a.text)?.text,empty:!best&&!lineHit&&!uniq.length})}
+ const pl=tHit?prettyLabel(tHit.s):null;
+ const title=best?.r.attrs.find(a=>a.text)?.text?(best.r.name+' · '+best.r.attrs.find(a=>a.text).text):best?best.r.name:(pl?pl.title:'');
+ V.pickHl=tHit&&(!best||(tHit.x1-tHit.x0)*(tHit.y1-tHit.y0)<(best.r.x1-best.r.x0)*(best.r.y1-best.r.y0))?tHit:(best?best.r:null);V.pickLbl=title;V.pick={x:nm.x,y:nm.y};drawDxfSoon();
+ showPick({title,pl,name:best?.r.name,layer:best?.r.ly||tHit?.ly||layer,strings:uniq,items,tagAttr:best?.r.attrs.find(a=>/tag|ident|nome|codigo/i.test(a.tag)&&a.text)?.text,empty:!best&&!tHit&&!lineHit})}
 function showPick(info){
- let c=$('#pickcard');if(!c){c=document.createElement('div');c.id='pickcard';$('#vp').append(c);c.addEventListener('pointerdown',e=>e.stopPropagation());c.addEventListener('pointerup',e=>e.stopPropagation())}
+ let c=$('#pickcard');if(!c){c=document.createElement('div');c.id='pickcard';$('#vp').append(c);c.addEventListener('pointerdown',e=>e.stopPropagation());c.addEventListener('pointerup',e=>e.stopPropagation());c.addEventListener('wheel',e=>e.stopPropagation())}
  const office=mode==='escritorio';
  const free=office?projItens(V.p.projetoId).filter(i=>!marcaDe(i.id)):[];
+ const pl=info.pl;
  c.innerHTML=`<button class="x" data-act="pickClose" title="Fechar">✕</button>
  ${info.empty?'<div class="muted">Nada identificado neste ponto. Clique sobre um equipamento ou perto do texto dele.</div>':`
- ${info.name?`<div class="pk-l">Equipamento / bloco</div><div class="pk-v">${esc(info.name)}</div>`:''}
+ <div class="pk-t">${esc(info.title||info.name||'Elemento do desenho')}</div>
+ <div class="pk-chips">${pl&&pl.cat?`<span class="pk-chip c">${esc(CATS[pl.cat].l)}</span>`:''}${(pl?pl.dims:[]).map(x=>`<span class="pk-chip">📐 ${esc(x)}</span>`).join('')}${info.layer?`<span class="pk-chip g">Camada: ${esc(info.layer)}</span>`:''}</div>
+ ${pl&&pl.extra.length?`<div class="pk-l">Complemento no desenho</div><div class="pk-v">${pl.extra.map(esc).join(' · ')}</div>`:''}
  ${info.tagAttr?`<div class="pk-l">TAG no desenho</div><div class="pk-v">${esc(info.tagAttr)}</div>`:''}
- ${info.layer?`<div class="pk-l">Camada</div><div class="pk-v">${esc(info.layer)}</div>`:''}
- ${info.strings.length?`<div class="pk-l">Textos encontrados</div><div class="pk-v">${info.strings.map(esc).join(' · ')}</div>`:''}
- ${info.items.length?`<div class="pk-l">No projeto cadastrado</div>${info.items.map(it=>`<div class="pk-it"><b>${esc(it.campos.tag)}</b> — ${CATS[it.cat].l}${it.campos.modelo?' · '+esc(it.campos.modelo):''} <span class="chip s-${statusOf(it.id)}">${ST[statusOf(it.id)]}</span><div class="pk-b"><button class="btn sm" data-act="pickOpen" data-id="${it.id}">Abrir conferência</button>${office&&!marcaDe(it.id)?`<button class="btn sm sec" data-act="pickMark" data-id="${it.id}">📍 Marcar ponto aqui</button>`:''}</div></div>`).join('')}`:'<div class="muted" style="margin-top:6px">Nenhum item do projeto com esta TAG.</div>'}
+ ${!pl&&info.strings.length?`<div class="pk-l">Textos encontrados</div><div class="pk-v">${info.strings.map(esc).join(' · ')}</div>`:''}
+ ${info.items.length?`<div class="pk-l">No projeto cadastrado</div>${info.items.map(it=>`<div class="pk-it"><b>${esc(it.campos.tag)}</b> — ${CATS[it.cat].l}${it.campos.modelo?' · '+esc(it.campos.modelo):''} <span class="chip s-${statusOf(it.id)}">${ST[statusOf(it.id)]}</span><div class="pk-b"><button class="btn sm" data-act="pickOpen" data-id="${it.id}">Abrir conferência</button>${office&&!marcaDe(it.id)?`<button class="btn sm sec" data-act="pickMark" data-id="${it.id}">📍 Marcar ponto aqui</button>`:''}</div></div>`).join('')}`:'<div class="muted" style="margin-top:8px">Nenhum item do projeto com esta TAG.</div>'}
  ${office&&free.length&&!info.items.length?`<div class="pk-b"><select id="pickSel">${free.map(i=>`<option value="${i.id}">${esc(i.campos.tag)} — ${CATS[i.cat].l}</option>`).join('')}</select><button class="btn sm" data-act="pickMarkSel">📍 Marcar aqui</button></div>`:''}`}`;
 }
-ACT.pickClose=()=>{$('#pickcard')?.remove();if(V){V.pickHl=null;drawDxfSoon()}};
+ACT.pickClose=()=>{$('#pickcard')?.remove();if(V){V.pickHl=null;V.pickLbl=null;drawDxfSoon()}};
 ACT.pickOpen=b=>openConf(b.dataset.id);
 ACT.pickMark=b=>{if(V?.pick){placeMarker(b.dataset.id,V.pick.x,V.pick.y);ACT.pickClose()}};
 ACT.pickMarkSel=()=>{const id=$('#pickSel')?.value;if(id&&V?.pick){placeMarker(id,V.pick.x,V.pick.y);ACT.pickClose()}};

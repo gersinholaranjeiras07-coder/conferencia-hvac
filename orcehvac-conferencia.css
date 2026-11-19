@@ -170,3 +170,12 @@
 
 .cf #hlnote{position:absolute;right:12px;top:12px;z-index:5;max-width:min(420px,70%);background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.2);cursor:default}
 .cf #dxfnote summary{cursor:pointer;font-weight:600;list-style:none}.cf #dxfnote summary::-webkit-details-marker{display:none}.cf #dxfnote details>div{margin-top:8px}
+
+.cf .dxq{padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--input);color:var(--text);font:inherit;min-width:190px}
+
+.cf #pickcard{border-left:5px solid var(--blue);min-width:260px}
+.cf #pickcard .pk-t{font-size:17px;font-weight:700;line-height:1.25;padding-right:22px;overflow-wrap:anywhere}
+.cf #pickcard .pk-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.cf #pickcard .pk-chip{background:var(--soft);color:var(--text);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600}
+.cf #pickcard .pk-chip.c{background:var(--blue);color:#fff}
+.cf #pickcard .pk-chip.g{font-weight:500;color:var(--muted)}
