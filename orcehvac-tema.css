@@ -1,17 +1,18 @@
-/* Tema vermelho — Comissionamento de obra */
-:root{--navy:#4a0d12;--navy2:#6b1219;--blue:#c01f2f;--bg:#f8f4f4;--panel:#fff;--text:#2b1719;--muted:#7b6366;--line:#ebdddd;--soft:#fcecee;--input:#fff;--green:#147453;--orange:#986017;color-scheme:light}
-:root[data-theme=dark]{--navy:#1f0709;--navy2:#3b0e13;--blue:#ff6b78;--bg:#150d0e;--panel:#221517;--text:#f6e9ea;--muted:#c6a8ab;--line:#44292c;--soft:#321b1e;--input:#1a1012;--green:#72dbb5;--orange:#ffd18a;color-scheme:dark}
-.sidebar{background:linear-gradient(170deg,var(--navy),#2c050a)}
-.brand-mark{background:#c01f2f}
-.nav button{color:#f3dcde}.nav button.active{box-shadow:inset 3px 0 #ff5a68}
-.brand-sub,.nav-label{color:#e6bcc0}
-.local-pill{background:#ffffff1c;color:#fbe3e5}
-.bar{background:#e0707a}.bar.current{background:#c01f2f}
+/* Tema azul — Comissionamento de obra */
+:root{--navy:#0a2a52;--navy2:#123f78;--blue:#1769e0;--bg:#f2f6fb;--panel:#fff;--text:#14233a;--muted:#5d6f88;--line:#dbe5f0;--soft:#e8f1fd;--input:#fff;--green:#147453;--orange:#986017;color-scheme:light}
+:root[data-theme=dark]{--navy:#06142b;--navy2:#0d2a52;--blue:#5aa2ff;--bg:#0c1522;--panel:#142033;--text:#e8f0fb;--muted:#9db1cc;--line:#26364f;--soft:#192b45;--input:#0f1a2b;--green:#72dbb5;--orange:#ffd18a;color-scheme:dark}
+.sidebar{background:linear-gradient(170deg,var(--navy),#061a36)}
+.brand-mark{background:transparent!important;padding:0}
+.brand-mark img{border-radius:10px;box-shadow:0 2px 8px #0006}
+.nav button{color:#dbe8fb}.nav button.active{box-shadow:inset 3px 0 #5aa2ff}
+.brand-sub,.nav-label{color:#a9c3e8}
+.local-pill{background:#ffffff1c;color:#e3eefc}
+.bar{background:#7db1f5}.bar.current{background:#1769e0}
 .stat-icon{color:var(--blue)}
-:root[data-theme=dark] .btn.primary{color:#2b0508}
+:root[data-theme=dark] .btn.primary{color:#04152e}
 .artech-logo{display:none!important}
-.cf.office .seg button.on{background:#6b1219;color:#fff}
-.cf.office .btn:not(.sec):not(.red):not([style*=background]){background:#8c1d26;color:#fff}
+.cf.office .seg button.on{background:#0f4fb5;color:#fff}
+.cf.office .btn:not(.sec):not(.red):not([style*=background]){background:#1257c4;color:#fff}
 .cf-ov .empty{padding:24px;text-align:center;color:var(--muted)}
 .cf-ov .cf-tools{display:flex;gap:10px}
 .cf-ov .budget-row{display:grid;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid var(--line)}

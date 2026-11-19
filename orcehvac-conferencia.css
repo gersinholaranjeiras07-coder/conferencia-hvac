@@ -154,3 +154,12 @@
 .cf .rep-brand img{max-height:56px;max-width:180px;object-fit:contain}
 .cf .rep-sign{display:grid;grid-template-columns:1fr 1fr;gap:48px;margin:44px 8px 8px;text-align:center;break-inside:avoid}
 .cf .rep-sign .line{border-top:1px solid #444;margin-bottom:6px}
+
+.cf #stage.dxf{background:transparent;box-shadow:none;pointer-events:none}
+.cf #stage.dxf .mk{pointer-events:auto}
+.cf #pickcard{position:absolute;left:12px;bottom:12px;z-index:6;max-width:min(380px,calc(100% - 24px));max-height:60%;overflow:auto;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.28);padding:12px 14px;font-size:13px;cursor:default;touch-action:auto}
+.cf #pickcard .x{position:absolute;right:8px;top:6px;border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer}
+.cf #pickcard .pk-l{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-top:8px}
+.cf #pickcard .pk-v{font-weight:600;overflow-wrap:anywhere}
+.cf #pickcard .pk-it{margin-top:6px;padding:8px;border-radius:8px;background:var(--soft)}
+.cf #pickcard .pk-b{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}

@@ -254,10 +254,8 @@ async function loadPage(){
    await pg.render({canvasContext:ctx,viewport:vw,background:'rgb(255,255,255)'}).promise;
   }else if(p.tipo==='dxf'){
    await ensureDxf();
-   if(!docCache[p.id])docCache[p.id]=dxfPrepare(await readText(blob));
-   const d=docCache[p.id];const sc=Math.min(3600/d.w,3600/d.h,1e9);
-   cv.width=Math.max(50,Math.round(d.w*sc));cv.height=Math.max(50,Math.round(d.h*sc));
-   dxfDraw(d,cv);w=d.w;h=d.h;
+   if(!docCache[p.id]){const had=!!p.dxfExt;docCache[p.id]=dxfPrepare(await readText(blob),p);if(!had&&p.dxfExt)save()}
+   const d=docCache[p.id];cv.style.display='none';ensureCv2();w=d.w;h=d.h;
   }else{
    const img=new Image();img.src=await urlFor(p.blobId);await img.decode();
    if(tok!==renderTok)return;
@@ -271,7 +269,7 @@ async function loadPage(){
 }
 function fitView(){const vp=$('#vp');if(!vp)return;const r=vp.getBoundingClientRect();
  V.z=Math.min(r.width/V.W,r.height/V.H)*.97;V.tx=(r.width-V.W*V.z)/2;V.ty=(r.height-V.H*V.z)/2;applyT()}
-function applyT(){const st=$('#stage');if(!st)return;st.style.transform=`translate(${V.tx}px,${V.ty}px) scale(${V.z})`;st.style.setProperty('--inv',(1/V.z).toFixed(4))}
+function applyT(){const st=$('#stage');if(!st)return;st.style.transform=`translate(${V.tx}px,${V.ty}px) scale(${V.z})`;if(V.p&&V.p.tipo==='dxf')drawDxfSoon();st.style.setProperty('--inv',(1/V.z).toFixed(4))}
 function zoomAt(f,cx,cy){const vp=$('#vp').getBoundingClientRect();cx??=vp.width/2;cy??=vp.height/2;
  const nz=Math.max(.05,Math.min(25,V.z*f));f=nz/V.z;V.tx=cx-(cx-V.tx)*f;V.ty=cy-(cy-V.ty)*f;V.z=nz;applyT()}
 function centerOn(nx,ny){const r=$('#vp').getBoundingClientRect();V.z=Math.max(V.z,Math.min(r.width/V.W*3,6));V.tx=r.width/2-nx*V.W*V.z;V.ty=r.height/2-ny*V.H*V.z;applyT()}
@@ -297,7 +295,7 @@ function setupPointer(){
   if(!V.pts.has(e.pointerId))return;V.pts.delete(e.pointerId);vp.classList.remove('drag');
   if(V.pts.size<2)V.pinch=null;
   const d=V.drag;if(V.pts.size>0||!d)return;V.drag=null;
-  if(!d.moved){ if(d.mk)markerClick(d.mk); else if(ui.placing){const nm=normCoords(e);if(nm)placeMarker(ui.placing,nm.x,nm.y)} }
+  if(!d.moved){ if(d.mk)markerClick(d.mk); else if(ui.placing){const nm=normCoords(e);if(nm)placeMarker(ui.placing,nm.x,nm.y)} else if(V.p.tipo==='dxf')pickDxf(e) }
   else if(d.mk&&d.pos&&mode==='escritorio'){const m=marcaDe(d.mk);if(m){m.x=d.pos.x;m.y=d.pos.y;save();logH('editou','marcador',d.mk,`Moveu o ponto de ${item(d.mk)?.campos.tag} na planta ${V.p.nome}`)}}
  };
  vp.addEventListener('pointerup',up);vp.addEventListener('pointercancel',up);
@@ -365,8 +363,38 @@ ACT.goItem=b=>{const m=marcaDe(b.dataset.id);if(!m)return;
 async function readText(blob){const buf=await blob.arrayBuffer();try{return new TextDecoder('utf-8',{fatal:true}).decode(buf)}catch(e){return new TextDecoder('windows-1252').decode(buf)}}
 function dxfColor(c){let r=(c>>16)&255,g=(c>>8)&255,b=c&255;if(r>235&&g>235&&b>235)return '#000';
  const lum=(0.299*r+0.587*g+0.114*b)/255;if(lum>.72){r*=.55;g*=.55;b*=.55}return `rgb(${r|0},${g|0},${b|0})`}
-function dxfPrepare(text){
+function rawScan(text){
+ const L=text.split(/\r?\n/),out={ins:new Map(),hatches:[]};let sec='',cur=null,last=null;
+ const G=(g,c)=>{const x=g.find(a=>a[0]===c);return x?x[1]:undefined},N=(g,c,d=0)=>{const v=G(g,c);const n=parseFloat(v);return isNaN(n)?d:n};
+ const rad=a=>a*Math.PI/180;
+ const arc=(cx,cy,r,a0,a1,ccw)=>{if(!ccw)[a0,a1]=[a1,a0];a0=rad(a0);a1=rad(a1);while(a1<=a0)a1+=Math.PI*2;const k=Math.max(8,Math.ceil((a1-a0)/(Math.PI*2)*64)),o=[];for(let i=0;i<=k;i++){const a=a0+(a1-a0)*i/k;o.push([cx+r*Math.cos(a),cy+r*Math.sin(a)])}return o};
+ function hatch(g){const loops=[];let i=g.findIndex(a=>a[0]===91);if(i<0)return loops;let nl=parseInt(g[i][1]);i++;
+  while(nl-->0&&i<g.length){while(i<g.length&&g[i][0]!==92)i++;if(i>=g.length)break;const flag=parseInt(g[i][1]);i++;const pts=[];
+   if(flag&2){let hb=0;while(i<g.length&&g[i][0]!==93){if(g[i][0]===72)hb=parseInt(g[i][1]);i++}const nv=parseInt(g[i]?.[1]||0);i++;
+    let k=0,x=null;while(i<g.length&&k<nv){const c=g[i][0];if(c===10){x=parseFloat(g[i][1])}else if(c===20){pts.push([x,parseFloat(g[i][1])]);k++}i++}
+    if(pts.length)pts.push(pts[0])}
+   else{while(i<g.length&&g[i][0]!==93)i++;let ne=parseInt(g[i]?.[1]||0);i++;
+    while(ne-->0&&i<g.length){while(i<g.length&&g[i][0]!==72)i++;const t=parseInt(g[i][1]);i++;const e={};
+     while(i<g.length&&![72,97,92,75,98].includes(g[i][0])){const c=g[i][0];if(!(c in e))e[c]=parseFloat(g[i][1]);i++}
+     if(t===1)pts.push([e[10],e[20]],[e[11],e[21]]);
+     else if(t===2)pts.push(...arc(e[10],e[20],e[40],e[50],e[51],e[73]!==0));
+     else if(t===3){const mx=e[11],my=e[21],a=Math.hypot(mx,my),b=a*e[40],rot=Math.atan2(my,mx);const a0=rad(e[50]||0);let a1=rad(e[51]??360);if(e[73]===0)[a1]=[a1];for(let q=0;q<=48;q++){const t2=a0+(a1-a0)*q/48,X=a*Math.cos(t2),Y=b*Math.sin(t2);pts.push([e[10]+X*Math.cos(rot)-Y*Math.sin(rot),e[20]+X*Math.sin(rot)+Y*Math.cos(rot)])}}}}
+   if(pts.length>1)loops.push(pts)}
+  return loops}
+ const flush=()=>{if(!cur)return;const g=cur.g,t=cur.t;
+  if(t==='INSERT'){const o={name:G(g,2)||'',x:N(g,10),y:N(g,20),attrs:[]};const k=o.name+'|'+Math.round(o.x*100)+','+Math.round(o.y*100);(out.ins.get(k)||out.ins.set(k,[]).get(k)).push(o);last=o}
+  else if(t==='ATTRIB'){if(last&&!(N(g,70)&1)){const al=N(g,72)||N(g,74);last.attrs.push({tag:G(g,2)||'',text:(G(g,1)||'').trim(),x:al&&G(g,11)!==undefined?N(g,11):N(g,10),y:al&&G(g,21)!==undefined?N(g,21):N(g,20),h:N(g,40,1),rot:N(g,50)})}}
+  else{last=null;if(t==='HATCH')out.hatches.push({ly:G(g,8)||'0',loops:hatch(g)})}
+  cur=null};
+ for(let i=0;i+1<L.length;i+=2){const c=parseInt(L[i]),v=L[i+1].replace(/\r$/,'').trim();if(isNaN(c))continue;
+  if(c===0){if(sec==='ENTITIES')flush();if(v==='SECTION'){}else if(v==='ENDSEC'){sec=''}else if(sec==='ENTITIES')cur={t:v,g:[]};continue}
+  if(c===2&&!cur&&i>0&&L[i-2].trim()==='0'&&L[i-1].trim()==='SECTION'){sec=v;continue}
+  if(cur)cur.g.push([c,v])}
+ flush();return out}
+function dxfPrepare(text,pl){
  const dxf=new DxfParser().parseSync(text);if(!dxf)throw new Error('DXF inválido');
+ let raw={ins:new Map(),hatches:[]};try{raw=rawScan(text)}catch(e){console.warn('rawScan',e)}
+ const recs=[];let curLy='0';
  const layers=dxf.tables?.layer?.layers||{},prims=[];
  const mul=(m,n)=>[m[0]*n[0]+m[2]*n[1],m[1]*n[0]+m[3]*n[1],m[0]*n[2]+m[2]*n[3],m[1]*n[2]+m[3]*n[3],m[0]*n[4]+m[2]*n[5]+m[4],m[1]*n[4]+m[3]*n[5]+m[5]];
  const ap=(m,x,y)=>[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]];
@@ -374,9 +402,9 @@ function dxfPrepare(text){
  const bulgeSeg=(p,q,bu)=>{const th=4*Math.atan(bu),dx=q.x-p.x,dy=q.y-p.y,d=Math.hypot(dx,dy);if(!d)return[];const r=d/(2*Math.sin(th/2)),mx=(p.x+q.x)/2,my=(p.y+q.y)/2,h=r*Math.cos(th/2);const cx=mx-dy/d*h,cy=my+dx/d*h;let a0=Math.atan2(p.y-cy,p.x-cx);const o=[],k=Math.max(4,Math.ceil(Math.abs(th)/(Math.PI*2)*64));for(let i=1;i<k;i++){const a=a0+th*i/k;o.push({x:cx+Math.abs(r)*Math.cos(a),y:cy+Math.abs(r)*Math.sin(a)})}return o};
  const visible=e=>{const L=layers[e.layer];return!(L&&(L.visible===false||L.frozen))&&e.visible!==false};
  const colOf=(e,inh)=>{let c=e.color;if(e.colorIndex===256||c==null||e.colorIndex===0){c=layers[e.layer]?.color;if(e.colorIndex===0&&inh!=null)c=inh}return c==null?0:c};
- const emit=(pts,c,closed)=>{if(pts.length>1)prims.push({t:'l',p:pts,c,z:closed})};
+ const emit=(pts,c,closed)=>{if(pts.length>1)prims.push({t:'l',p:pts,c,ly:curLy})};
  function walk(ents,m,inh,depth){
-  for(const e of ents||[]){if(!visible(e))continue;const c=dxfColor(colOf(e,inh));
+  for(const e of ents||[]){if(!visible(e))continue;curLy=e.layer||'0';const c=dxfColor(colOf(e,inh));
    try{switch(e.type){
     case 'LINE':emit(e.vertices.map(v=>ap(m,v.x,v.y)),c);break;
     case 'LWPOLYLINE':case 'POLYLINE':{const v=e.vertices||[];const pts=[];const closed=e.shape;
@@ -390,36 +418,106 @@ function dxfPrepare(text){
     case 'SOLID':case '3DFACE':{const v=e.points||e.vertices||[];if(v.length>=3){const o=v.map(p=>ap(m,p.x,p.y));if(e.type==='SOLID'&&o.length===4)[o[2],o[3]]=[o[3],o[2]];o.push(o[0]);emit(o,c)}break}
     case 'LEADER':emit((e.vertices||[]).map(p=>ap(m,p.x,p.y)),c);break;
     case 'TEXT':case 'MTEXT':case 'ATTRIB':{const pos=e.startPoint||e.position;if(!pos)break;let tx=String(e.text||'');if(e.type==='MTEXT')tx=tx.replace(/\\P/g,'\n').replace(/\\[A-Za-z][^;]*;/g,'').replace(/[{}]/g,'');
-     const h=(e.textHeight||e.height||1)*Math.hypot(m[0],m[1]);const rot=Math.atan2(m[1],m[0])+(e.rotation||0)*Math.PI/180;const [x,y]=ap(m,pos.x,pos.y);if(tx.trim())prims.push({t:'t',x,y,h,rot,s:tx,c});break}
+     const h=(e.textHeight||e.height||1)*Math.hypot(m[0],m[1]);const rot=Math.atan2(m[1],m[0])+(e.rotation||0)*Math.PI/180;const [x,y]=ap(m,pos.x,pos.y);if(tx.trim())prims.push({t:'t',x,y,h,rot,s:tx,c,ly:curLy});break}
     case 'INSERT':{if(depth>8)break;const b=dxf.blocks?.[e.name];if(!b||!b.entities)break;const bp=b.position||{x:0,y:0};
      const sx=e.xScale||1,sy=e.yScale||1,r=(e.rotation||0)*Math.PI/180,co=Math.cos(r),si=Math.sin(r);
-     const cols=e.columnCount||1,rows=e.rowCount||1;
+     const cols=e.columnCount||1,rows=e.rowCount||1;const i0=prims.length,insLy=e.layer||'0';
      for(let i=0;i<rows;i++)for(let j=0;j<cols;j++){
       const px=e.position.x+j*(e.columnSpacing||0),py=e.position.y+i*(e.rowSpacing||0);
       const T=[co*sx,si*sx,-si*sy,co*sy,px,py];let M=mul(m,mul(T,[1,0,0,1,-bp.x,-bp.y]));
-      walk(b.entities,M,colOf(e,inh),depth+1)}break}
+      walk(b.entities,M,colOf(e,inh),depth+1)}
+     const attrs=[];if(depth===0){const k=e.name+'|'+Math.round(e.position.x*100)+','+Math.round(e.position.y*100);const lst=raw.ins.get(k);const o=lst&&lst.shift();
+      if(o)o.attrs.forEach(a=>{attrs.push({tag:a.tag,text:a.text});if(a.text)prims.push({t:'t',x:a.x,y:a.y,h:a.h,rot:a.rot*Math.PI/180,s:a.text,c:dxfColor(colOf(e,inh)),ly:insLy})})}
+     recs.push({name:e.name,ly:insLy,i0,i1:prims.length,attrs,d:depth});curLy=insLy;break}
     case 'DIMENSION':{if(depth>8||!e.block)break;const b=dxf.blocks?.[e.block];if(b?.entities)walk(b.entities,m,null,depth+1);break}
    }}catch(err){}
   }}
  walk(dxf.entities,[1,0,0,1,0,0],null,0);
- // extensão robusta (ignora pontos isolados muito distantes)
- const xs=[],ys=[];prims.forEach(p=>{if(p.t==='l')p.p.forEach(q=>{xs.push(q[0]);ys.push(q[1])});else{xs.push(p.x);ys.push(p.y)}});
- if(!xs.length)throw new Error('O DXF não tem desenhos legíveis (linhas, polilinhas, arcos ou textos).');
- const q=(a,f)=>{const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.max(0,Math.floor(f*(s.length-1))))]};
- let x0=q(xs,.002),x1=q(xs,.998),y0=q(ys,.002),y1=q(ys,.998);const mx=(x1-x0)*.08||1,my=(y1-y0)*.08||1;
- x0-=mx;x1+=mx;y0-=my;y1+=my;
- return{prims,x0,y0,w:x1-x0,h:y1-y0};
+ raw.hatches.forEach(h=>{const L=layers[h.ly];if(L&&(L.visible===false||L.frozen))return;const c=dxfColor(L?.color??0);curLy=h.ly;h.loops.forEach(pts=>emit(pts,c))});
+ if(!prims.length)throw new Error('O DXF não tem desenhos legíveis (linhas, polilinhas, arcos ou textos).');
+ // caixa de cada elemento (para cortar o que está fora da tela) e extensão
+ for(const q of prims){if(q.t==='l'){let a=1e308,b=1e308,c=-1e308,d2=-1e308;for(const v of q.p){if(v[0]<a)a=v[0];if(v[0]>c)c=v[0];if(v[1]<b)b=v[1];if(v[1]>d2)d2=v[1]}q.x0=a;q.y0=b;q.x1=c;q.y1=d2}
+  else{const w=q.s.split('\n').reduce((m,s)=>Math.max(m,s.length),0)*q.h*.62,hh=q.h*1.25*q.s.split('\n').length;q.x0=q.x-q.h;q.y0=q.y-hh;q.x1=q.x+w+q.h;q.y1=q.y+q.h*1.2}}
+ let ext=pl&&pl.dxfExt;
+ if(!ext){
+  // região principal do desenho: ignora elementos soltos muito distantes
+  const pts=[];prims.forEach(q=>{if(q.t==='l')q.p.forEach(v=>pts.push(v));else pts.push([q.x,q.y])});
+  let ax=1e308,ay=1e308,bx=-1e308,by=-1e308;pts.forEach(v=>{if(v[0]<ax)ax=v[0];if(v[0]>bx)bx=v[0];if(v[1]<ay)ay=v[1];if(v[1]>by)by=v[1]});
+  const G=80,gw=(bx-ax)/G||1,gh=(by-ay)/G||1,cnt=new Uint32Array(G*G);
+  pts.forEach(v=>{const i=Math.min(G-1,Math.floor((v[0]-ax)/gw)),j=Math.min(G-1,Math.floor((v[1]-ay)/gh));cnt[j*G+i]++});
+  const thr=Math.max(3,pts.length*.0008);let x0=1e308,y0=1e308,x1=-1e308,y1=-1e308;
+  for(let j=0;j<G;j++)for(let i=0;i<G;i++)if(cnt[j*G+i]>=thr){x0=Math.min(x0,ax+i*gw);x1=Math.max(x1,ax+(i+1)*gw);y0=Math.min(y0,ay+j*gh);y1=Math.max(y1,ay+(j+1)*gh)}
+  if(x1<=x0||y1<=y0){x0=ax;x1=bx;y0=ay;y1=by}
+  const mx=(x1-x0)*.04||1,my=(y1-y0)*.04||1;ext={x0:x0-mx,y0:y0-my,w:x1-x0+2*mx,h:y1-y0+2*my};
+  if(pl)pl.dxfExt=ext;
+ }
+ const inserts=recs.map(r=>{let a=1e308,b=1e308,c=-1e308,d2=-1e308;const texts=[];for(let i=r.i0;i<r.i1;i++){const q=prims[i];if(!q)continue;if(q.x0<a)a=q.x0;if(q.y0<b)b=q.y0;if(q.x1>c)c=q.x1;if(q.y1>d2)d2=q.y1;if(q.t==='t')texts.push(q.s.replace(/\s+/g,' ').trim())}
+  return a>c?null:{name:r.name,ly:r.ly,x0:a,y0:b,x1:c,y1:d2,attrs:r.attrs,texts,d:r.d}}).filter(Boolean);
+ return{prims,x0:ext.x0,y0:ext.y0,w:ext.w,h:ext.h,inserts,texts:prims.filter(q=>q.t==='t'),nIns:recs.length};
 }
-function dxfDraw(d,cv){
- const ctx=cv.getContext('2d'),sc=cv.width/d.w;ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
- ctx.lineWidth=Math.max(1.5,cv.width/1100);ctx.lineJoin='round';ctx.lineCap='round';
- const X=x=>(x-d.x0)*sc,Y=y=>cv.height-(y-d.y0)*sc;
+function ensureCv2(){const vp=$('#vp');if(!vp)return null;let c=$('#cv2');if(!c){c=document.createElement('canvas');c.id='cv2';c.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none';vp.insertBefore(c,vp.firstChild);$('#stage')?.classList.add('dxf')}return c}
+function drawDxfSoon(){if(!V||V.raf)return;V.raf=requestAnimationFrame(()=>{if(V)V.raf=0;drawDxfView()})}
+function drawDxfView(){
+ const cv=$('#cv2');if(!cv||!V||V.p.tipo!=='dxf')return;const d=docCache[V.p.id];if(!d||!d.prims)return;
+ const vp=$('#vp'),r=vp.getBoundingClientRect(),dpr=Math.min(3,globalThis.devicePixelRatio||1);
+ const W=Math.max(1,Math.round(r.width*dpr)),H=Math.max(1,Math.round(r.height*dpr));if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H}
+ const ctx=cv.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,W,H);ctx.scale(dpr,dpr);
+ const sc=V.W*V.z/d.w,ox=V.tx,oy=V.ty+V.H*V.z,X=x=>ox+(x-d.x0)*sc,Y=y=>oy-(y-d.y0)*sc;
+ ctx.fillStyle='#fff';ctx.shadowColor='rgba(0,0,0,.3)';ctx.shadowBlur=14;ctx.fillRect(V.tx,V.ty,V.W*V.z,V.H*V.z);ctx.shadowBlur=0;
+ ctx.save();ctx.beginPath();ctx.rect(V.tx,V.ty,V.W*V.z,V.H*V.z);ctx.clip();
+ const vx0=d.x0+(0-ox)/sc,vx1=d.x0+(r.width-ox)/sc,vy1=d.y0+oy/sc,vy0=d.y0+(oy-r.height)/sc;
+ ctx.lineWidth=1.2;ctx.lineJoin='round';ctx.lineCap='round';
+ let cur=null;const flush=()=>{if(cur!==null){ctx.stroke();cur=null}};
  for(const p of d.prims){
-  if(p.t==='l'){ctx.strokeStyle=p.c;ctx.beginPath();p.p.forEach((q,i)=>i?ctx.lineTo(X(q[0]),Y(q[1])):ctx.moveTo(X(q[0]),Y(q[1])));ctx.stroke()}
-  else{const px=p.h*sc;if(px<3)continue;ctx.save();ctx.translate(X(p.x),Y(p.y));ctx.rotate(-p.rot);ctx.fillStyle=p.c;ctx.font=`${px}px sans-serif`;ctx.textBaseline='alphabetic';
+  if(p.x1<vx0||p.x0>vx1||p.y1<vy0||p.y0>vy1)continue;
+  if(p.t==='l'){if((p.x1-p.x0)*sc<.4&&(p.y1-p.y0)*sc<.4)continue;
+   if(cur!==p.c){flush();ctx.strokeStyle=p.c;ctx.beginPath();cur=p.c}
+   const v=p.p;ctx.moveTo(X(v[0][0]),Y(v[0][1]));for(let i=1;i<v.length;i++)ctx.lineTo(X(v[i][0]),Y(v[i][1]))}
+  else{const px=p.h*sc;if(px<3.5)continue;flush();ctx.save();ctx.translate(X(p.x),Y(p.y));ctx.rotate(-p.rot);ctx.fillStyle=p.c;ctx.font=`${px}px Arial,sans-serif`;ctx.textBaseline='alphabetic';
    p.s.split('\n').forEach((ln,i)=>ctx.fillText(ln,0,i*px*1.2));ctx.restore()}
  }
+ flush();
+ const h=V.pickHl;if(h){ctx.fillStyle='rgba(23,105,224,.14)';ctx.strokeStyle='#1769e0';ctx.lineWidth=2;const a=X(h.x0),b=Y(h.y1),w=(h.x1-h.x0)*sc,hh=(h.y1-h.y0)*sc;ctx.fillRect(a,b,w,hh);ctx.strokeRect(a,b,w,hh)}
+ ctx.restore();
 }
+/* clique na planta DXF: mostra nome do bloco/equipamento e a TAG */
+const tagKey=s=>normT(String(s||''));
+function matchItems(strings){const keys=strings.map(tagKey).filter(k=>k.length>=2),found=new Map();
+ for(const it of projItens(V.p.projetoId)){const tk=tagKey(it.campos.tag);if(tk.length<2)continue;
+  if(keys.some(k=>k===tk||(tk.length>=3&&k.includes(tk)&&k.length<=tk.length+12)))found.set(it.id,it)}
+ return[...found.values()]}
+function pickDxf(e){
+ const d=docCache[V.p.id];if(!d||!d.prims)return;const nm=normCoords(e);if(!nm)return;
+ const sc=V.W*V.z/d.w,x=d.x0+nm.x*d.w,y=d.y0+(1-nm.y)*d.h,tol=10/sc;
+ let best=null;for(const r of d.inserts){if(x<r.x0-tol||x>r.x1+tol||y<r.y0-tol||y>r.y1+tol)continue;const a=(r.x1-r.x0)*(r.y1-r.y0);if(r.d>0&&a>d.w*d.h*.2)continue;if(!best||a<best.a)best={r,a}}
+ const near=[];for(const t of d.texts){const cx=(t.x0+t.x1)/2,cy=(t.y0+t.y1)/2,dist=Math.hypot(cx-x,cy-y);if(dist<tol*3||(x>=t.x0&&x<=t.x1&&y>=t.y0&&y<=t.y1))near.push({s:t.s.replace(/\s+/g,' ').trim(),dist})}
+ near.sort((a,b)=>a.dist-b.dist);
+ let layer='',lineHit=null;
+ if(!best){let bd=tol*.8;for(const p of d.prims){if(p.t!=='l'||x<p.x0-tol||x>p.x1+tol||y<p.y0-tol||y>p.y1+tol)continue;for(let i=1;i<p.p.length;i++){const a=p.p[i-1],b=p.p[i],dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy;let t=L2?((x-a[0])*dx+(y-a[1])*dy)/L2:0;t=Math.max(0,Math.min(1,t));const dd=Math.hypot(x-a[0]-t*dx,y-a[1]-t*dy);if(dd<bd){bd=dd;lineHit=p}}}
+  if(lineHit)layer=lineHit.ly}
+ const strings=[];if(best){best.r.attrs.forEach(a=>{if(a.text)strings.push(a.text)});best.r.texts.forEach(s=>strings.push(s))}
+ near.slice(0,4).forEach(n=>strings.push(n.s));
+ const uniq=[...new Set(strings.filter(Boolean))].slice(0,8);
+ const items=matchItems(uniq);
+ V.pickHl=best?best.r:null;V.pick={x:nm.x,y:nm.y};drawDxfSoon();
+ showPick({name:best?.r.name,layer:best?.r.ly||layer,strings:uniq,items,tagAttr:best?.r.attrs.find(a=>/tag|ident|nome|codigo/i.test(a.tag)&&a.text)?.text,empty:!best&&!lineHit&&!uniq.length})}
+function showPick(info){
+ let c=$('#pickcard');if(!c){c=document.createElement('div');c.id='pickcard';$('#vp').append(c);c.addEventListener('pointerdown',e=>e.stopPropagation());c.addEventListener('pointerup',e=>e.stopPropagation())}
+ const office=mode==='escritorio';
+ const free=office?projItens(V.p.projetoId).filter(i=>!marcaDe(i.id)):[];
+ c.innerHTML=`<button class="x" data-act="pickClose" title="Fechar">✕</button>
+ ${info.empty?'<div class="muted">Nada identificado neste ponto. Clique sobre um equipamento ou perto do texto dele.</div>':`
+ ${info.name?`<div class="pk-l">Equipamento / bloco</div><div class="pk-v">${esc(info.name)}</div>`:''}
+ ${info.tagAttr?`<div class="pk-l">TAG no desenho</div><div class="pk-v">${esc(info.tagAttr)}</div>`:''}
+ ${info.layer?`<div class="pk-l">Camada</div><div class="pk-v">${esc(info.layer)}</div>`:''}
+ ${info.strings.length?`<div class="pk-l">Textos encontrados</div><div class="pk-v">${info.strings.map(esc).join(' · ')}</div>`:''}
+ ${info.items.length?`<div class="pk-l">No projeto cadastrado</div>${info.items.map(it=>`<div class="pk-it"><b>${esc(it.campos.tag)}</b> — ${CATS[it.cat].l}${it.campos.modelo?' · '+esc(it.campos.modelo):''} <span class="chip s-${statusOf(it.id)}">${ST[statusOf(it.id)]}</span><div class="pk-b"><button class="btn sm" data-act="pickOpen" data-id="${it.id}">Abrir conferência</button>${office&&!marcaDe(it.id)?`<button class="btn sm sec" data-act="pickMark" data-id="${it.id}">📍 Marcar ponto aqui</button>`:''}</div></div>`).join('')}`:'<div class="muted" style="margin-top:6px">Nenhum item do projeto com esta TAG.</div>'}
+ ${office&&free.length&&!info.items.length?`<div class="pk-b"><select id="pickSel">${free.map(i=>`<option value="${i.id}">${esc(i.campos.tag)} — ${CATS[i.cat].l}</option>`).join('')}</select><button class="btn sm" data-act="pickMarkSel">📍 Marcar aqui</button></div>`:''}`}`;
+}
+ACT.pickClose=()=>{$('#pickcard')?.remove();if(V){V.pickHl=null;drawDxfSoon()}};
+ACT.pickOpen=b=>openConf(b.dataset.id);
+ACT.pickMark=b=>{if(V?.pick){placeMarker(b.dataset.id,V.pick.x,V.pick.y);ACT.pickClose()}};
+ACT.pickMarkSel=()=>{const id=$('#pickSel')?.value;if(id&&V?.pick){placeMarker(id,V.pick.x,V.pick.y);ACT.pickClose()}};
 
 /* =====================================================================
    CONFERÊNCIA EM CAMPO (projeto à esquerda × obra à direita)
