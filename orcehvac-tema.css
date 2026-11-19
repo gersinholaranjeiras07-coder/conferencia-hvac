@@ -1,0 +1,22 @@
+/* Tema vermelho — Comissionamento de obra */
+:root{--navy:#4a0d12;--navy2:#6b1219;--blue:#c01f2f;--bg:#f8f4f4;--panel:#fff;--text:#2b1719;--muted:#7b6366;--line:#ebdddd;--soft:#fcecee;--input:#fff;--green:#147453;--orange:#986017;color-scheme:light}
+:root[data-theme=dark]{--navy:#1f0709;--navy2:#3b0e13;--blue:#ff6b78;--bg:#150d0e;--panel:#221517;--text:#f6e9ea;--muted:#c6a8ab;--line:#44292c;--soft:#321b1e;--input:#1a1012;--green:#72dbb5;--orange:#ffd18a;color-scheme:dark}
+.sidebar{background:linear-gradient(170deg,var(--navy),#2c050a)}
+.brand-mark{background:#c01f2f}
+.nav button{color:#f3dcde}.nav button.active{box-shadow:inset 3px 0 #ff5a68}
+.brand-sub,.nav-label{color:#e6bcc0}
+.local-pill{background:#ffffff1c;color:#fbe3e5}
+.bar{background:#e0707a}.bar.current{background:#c01f2f}
+.stat-icon{color:var(--blue)}
+:root[data-theme=dark] .btn.primary{color:#2b0508}
+.artech-logo{display:none!important}
+.cf.office .seg button.on{background:#6b1219;color:#fff}
+.cf.office .btn:not(.sec):not(.red):not([style*=background]){background:#8c1d26;color:#fff}
+.cf-ov .empty{padding:24px;text-align:center;color:var(--muted)}
+.cf-ov .cf-tools{display:flex;gap:10px}
+.cf-ov .budget-row{display:grid;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid var(--line)}
+.cf-ov .budget-row:last-child{border-bottom:0}
+.cf-ov .cfbar{height:9px;background:var(--soft);border-radius:6px;overflow:hidden;display:flex;min-height:0;width:100%}
+.cf-ov .cfbar i{display:block;height:100%}
+.cf-ov .activity-title{overflow-wrap:anywhere}
+.cf-ov .cf-tools select{padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--input);color:var(--text);font:inherit}
