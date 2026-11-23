@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.6.0';
+const APP_VERSION='0.6.2';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -1111,7 +1111,7 @@ async function syncNow(silent){const d=desk();if(!d||syncing)return;syncing=true
  }catch(e){if(!silent)toast('Sincronização: '+e.message)}finally{syncing=false}}
 function schedSync(){if(!syncOn)return;clearTimeout(syncT);syncT=setTimeout(()=>syncNow(true),15000)}
 async function initSync(){const d=desk();if(!d)return;try{syncOn=!!await d({action:'sync-dir'})}catch{}if(syncOn){syncNow(true);setInterval(()=>{if(syncOn)syncNow(true)},120000)}}
-ACT.syncPick=async()=>{const d=desk();if(!d)return;const r=await d({action:'sync-pick'});if(!r)return;if(!await needUser())returnsyncOn=true;await syncNow(false);render()};
+ACT.syncPick=async()=>{const d=desk();if(!d)return;const r=await d({action:'sync-pick'});if(!r)return;if(!await needUser())return;syncOn=true;await syncNow(false);render()};
 ACT.syncNow=()=>syncNow(false);
 ACT.syncOff=async()=>{const d=desk();if(!d)return;await d({action:'sync-off'});syncOn=false;toast('Sincronização desligada');render()};
 ACT.bkpFolder=async()=>{const d=desk();if(!d)return;try{const r=await d({action:'backup-folder'});if(r){localStorage.setItem('orcehvac.conf.lastBkp',new Date().toISOString());toast('Backup completo salvo em: '+r);render()}}catch(e){toast('Backup: '+e.message)}};
@@ -1219,6 +1219,7 @@ ACT.pwMine=()=>{openModal(`<h3>🔑 Alterar minha senha</h3><div class="fld"><la
 function adminUsr(){const l=S.usuarios.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));const st=n=>{const h=S.hist.filter(x=>x.user===n);return{n:h.filter(x=>x.acao==='conferiu').length,t:h.length?h[0].ts:''}};
  return `<div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Usuários e acessos</h3><button class="btn sm" data-act="usrAdd" style="flex:none">+ Novo usuário</button></div>
  <p class="muted">Cada pessoa entra com a <b>própria senha</b>. O nome dela fica registrado em cada conferência e alteração.</p>
+ <div class="usr-tab"><b>📲 Usuários no tablet dos engenheiros</b><p class="muted" style="margin:4px 0 8px">Depois de cadastrar todos, clique em <b>Gerar arquivo para o tablet</b>. Envie o arquivo <b>usuarios.json</b> para o GitHub (na mesma pasta do site). Quando o engenheiro abrir o site, os usuários já estarão lá — ele só escolhe o nome e digita a senha. Se criar, apagar ou trocar a senha de alguém, gere e envie o arquivo de novo.</p><button class="btn sec sm" data-act="usrExport" style="flex:none">⬇ Gerar arquivo para o tablet (usuarios.json)</button></div>
  <div class="usr-roles">${ROLES.map(r=>`<div><b>${r}</b><span class="muted">${ROLE_HELP[r]}</span></div>`).join('')}</div>
  <div class="list">${l.map(u=>{const x=st(u.nome);return`<div class="li ${u.id===me.id?'sel':''}"><div class="usr-row">${avatar(u.nome)}<div class="grow"><b>${esc(u.nome)}</b> ${u.id===me.id?'<span class="usr-on">você</span>':''}<div class="muted">${esc(u.papel)} · ${x.n} conferência(s)${x.t?' · última atividade '+fdt(x.t):''}</div></div></div>
   <button class="btn sec sm" data-act="usrEd" data-id="${u.id}" title="Editar nome e função">✎</button><button class="btn sec sm" data-act="usrPw" data-id="${u.id}" title="Redefinir senha">🔑</button>${u.id===me.id?'':`<button class="btn red sm" data-act="usrDel" data-id="${u.id}" title="Remover">🗑</button>`}</div>`}).join('')}</div></div>`}
@@ -1234,6 +1235,8 @@ function userForm(id){const u=id?S.usuarios.find(x=>x.id===id):null;
   if(u){if(u.papel==='Administrador'&&p!=='Administrador'&&admins().length<2)return toast('É preciso manter pelo menos um administrador');u.nome=n;u.papel=p;if(u.id===me.id)user=n;logH('editou','usuario',u.id,'Editou o usuário '+n)}
   else{const a=$('#uf_1').value;if(a.length<4)return toast('A senha precisa ter pelo menos 4 caracteres');const salt=newSalt(),nu={id:uid(),nome:n,papel:p,s:salt,h:hashPw(a,salt)};S.usuarios.push(nu);logH('criou','usuario',nu.id,'Criou o usuário '+n+' ('+p+')')}
   save();closeModal();render()}}
+ACT.usrExport=()=>{if(!isAdm())return toast('Somente o administrador');const us=S.usuarios.map(u=>({id:u.id,nome:u.nome,papel:u.papel,s:u.s,h:u.h,_u:u._u||''}));
+ download('usuarios.json',JSON.stringify({v:1,gerado:new Date().toISOString(),usuarios:us},null,1),'application/json');toast('Arquivo gerado ('+us.length+' usuário(s)). Envie para o GitHub, na pasta do site.')};
 ACT.usrAdd=()=>userForm();ACT.usrEd=b=>userForm(b.dataset.id);
 ACT.usrPw=b=>{const u=S.usuarios.find(x=>x.id===b.dataset.id);if(!u)return;openModal(`<h3>🔑 Redefinir senha — ${esc(u.nome)}</h3><div class="fld"><label for="rp_1">Nova senha (mínimo 4 caracteres)</label><input id="rp_1" type="text" autocomplete="off"></div><p class="muted" style="font-size:12px">Passe a nova senha para a pessoa.</p><div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" id="rp_ok">Redefinir</button></div>`);
  setTimeout(()=>$('#rp_1')?.focus(),30);$('#rp_ok').onclick=()=>{const a=$('#rp_1').value;if(a.length<4)return toast('A senha precisa ter pelo menos 4 caracteres');u.s=newSalt();u.h=hashPw(a,u.s);logH('editou','usuario',u.id,'Redefiniu a senha de '+u.nome);save();closeModal();toast('Senha de '+u.nome+' redefinida')}};
@@ -1346,7 +1349,14 @@ ACT.wipe=async()=>{if(!confirm('Apagar TODOS os dados deste aparelho? Faça back
 
 /* ---------- Montagem no OrceHVAC ---------- */
 let loaded=false,pendingItem=null;
-async function ensureLoaded(){if(loaded)return true;try{const saved=await kvGet();if(saved)S={...S,...saved};S.cfg=S.cfg||{};S.del=S.del||{};S.usuarios=S.usuarios||[];resetSigs();loaded=true;initSync();return true}catch(e){toast('Não foi possível ler os dados do comissionamento: '+e.message);return false}}
+async function loadUserFile(){if(desk()||!/^https?:/.test(location.protocol))return;
+ try{const r=await fetch('usuarios.json?'+Date.now(),{cache:'no-store'});if(!r.ok)return;const j=await r.json();if(!j||!Array.isArray(j.usuarios))return;
+  const ids=new Set(j.usuarios.map(u=>u.id));let ch=0;
+  for(const u of j.usuarios){if(!u.id||!u.nome||!u.h||!u.s)continue;const i=S.usuarios.findIndex(x=>x.id===u.id),n={...u,arq:true};
+   if(i<0){S.usuarios.push(n);ch++}else if(S.usuarios[i].arq&&JSON.stringify(S.usuarios[i])!==JSON.stringify(n)){S.usuarios[i]=n;ch++}}
+  const n0=S.usuarios.length;S.usuarios=S.usuarios.filter(u=>!u.arq||ids.has(u.id));ch+=n0-S.usuarios.length;
+  if(ch){resetSigs();await kvSet('state',S)}}catch{}}
+async function ensureLoaded(){if(loaded)return true;try{const saved=await kvGet();if(saved)S={...S,...saved};S.cfg=S.cfg||{};S.del=S.del||{};S.usuarios=S.usuarios||[];resetSigs();loaded=true;await loadUserFile();initSync();return true}catch(e){toast('Não foi possível ler os dados do comissionamento: '+e.message);return false}}
 function mount(){
  const c=document.getElementById('content');root=document.createElement('div');root.className='cf';
  root.innerHTML='<section class="heading" id="cfHead"></section><nav class="module-tabs" id="cfNav"></nav><div id="cfKpi"></div><div id="cfMain"></div><div id="cfModal"></div>';
