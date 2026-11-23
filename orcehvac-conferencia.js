@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.9.1';
+const APP_VERSION='0.9.2';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -117,7 +117,12 @@ function renderTop(){
  $('#cfNav').innerHTML=`<button data-act="nav" data-v="home" class="${v==='home'||v==='plant'?'active':''}">Início</button>
   ${hasP?`<button data-act="nav" data-v="itens" class="${v==='itens'?'active':''}">Itens</button><button data-act="nav" data-v="pend" class="${v==='pend'?'active':''}">Pendências${pendProj().filter(x=>x.estado!=='fechada').length?' <span class="tabn">'+pendProj().filter(x=>x.estado!=='fechada').length+'</span>':''}</button><button data-act="nav" data-v="painel" class="${v==='painel'?'active':''}">Painel</button><button data-act="nav" data-v="report" class="${v==='report'?'active':''}">Relatório</button>`:''}
   ${off?`<button data-act="nav" data-v="admin" class="${v==='admin'?'active':''}">Administração</button>`:''}`;
+ syncSubnav($('#cfNav').innerHTML);
 }
+function syncSubnav(html){ // as abas do módulo também ficam no menu lateral, logo abaixo de "Comissionamento de obra"
+ const host=document.querySelector('.sidebar [data-page=conferencia]');if(!host)return;let sub=document.getElementById('cfSub');
+ if(!sub){sub=document.createElement('div');sub.id='cfSub';sub.className='cf-sub';host.after(sub);sub.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(b&&ACT[b.dataset.act]&&root&&root.isConnected)ACT[b.dataset.act](b,e)})}
+ sub.innerHTML=html;document.body.classList.add('cf-has-sub')}
 function renderKpi(){
  const el=$('#cfKpi');
  if(!ui.obraId||ui.view==='admin'){el.className='';el.innerHTML='';return}

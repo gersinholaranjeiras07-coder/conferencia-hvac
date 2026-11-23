@@ -1,4 +1,4 @@
-const V='comissionamento-1795465655';
+const V='comissionamento-1795465807';
 const FILES=["./", "OrceHVAC_Prototipo_v1.html", "bc-500.woff2", "bc-600.woff2", "bc-700.woff2", "bw-400.woff2", "bw-500.woff2", "bw-600.woff2", "bw-700.woff2", "dxf-parser.js", "icon-192.png", "icon-512.png", "index.html", "jsQR.js", "manifest.webmanifest", "municipios-ibge.js", "orcehvac-backup.js", "orcehvac-base.js", "orcehvac-conferencia.css", "orcehvac-conferencia.js", "orcehvac-desktop-ui.js", "orcehvac-modals.js", "orcehvac-organization.js", "orcehvac-storage.js", "orcehvac-tema.css", "orcehvac-visual.css", "orcehvac.css", "orcehvac.js", "pdf.bundle.js", "pdf.worker.bundle.js", "pwa.js", "qrcode.js", "resources.js", "state-schema.js", "xlsx.full.min.js"];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(n=>n!==V).map(n=>caches.delete(n)))).then(()=>self.clients.claim()))});

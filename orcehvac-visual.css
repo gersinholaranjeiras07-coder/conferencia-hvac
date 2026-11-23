@@ -403,3 +403,13 @@ body:has(.cf-login) .content{padding:0;max-width:none}
 .cf #vp.drawing{cursor:crosshair;touch-action:none}
 .cf .tbl-pend th,.cf .tbl-pend td{padding:10px 8px}.cf .tbl-pend td .btn.sm{padding:6px 10px}
 .cf .pr.chk-sec,.cf .pr:has(.sigpad),.cf .pr:has(.photos){grid-column:1/-1}
+
+/* ---------- abas do módulo no menu lateral ---------- */
+.cf-sub{display:none;flex-direction:column;gap:1px;margin:2px 0 8px 16px;padding-left:6px;border-left:1px solid rgba(255,255,255,.14)}
+.nav button[data-page=conferencia].active+.cf-sub{display:flex}
+.nav .cf-sub button{font-size:14px;padding:8px 10px 8px 12px;text-align:left;color:#B4C7CE}
+.nav .cf-sub button.active{background:rgba(25,167,196,.18);color:#fff}
+.nav .cf-sub button.active::before{left:-7px;top:6px;bottom:6px}
+.nav .cf-sub .tabn{margin-left:6px}
+body.cf-has-sub .cf .module-tabs{display:none}
+@media (max-width:700px){body.cf-has-sub .cf .module-tabs{display:flex}.cf-sub{display:none!important}}
