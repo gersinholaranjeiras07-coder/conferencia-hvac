@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.7.0';
+const APP_VERSION='0.8.0';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -72,9 +72,9 @@ async function ensurePdf(){if(pdfEngine)return pdfEngine;
 class LocalBinaryDataFactory{async fetch({kind,filename}){const e=globalThis.OrcePdfResources[kind+':'+filename];if(!e)throw Error('Recurso de PDF indisponível: '+filename);return Uint8Array.from(atob(e),c=>c.charCodeAt(0))}}
 
 /* ---------- Estado ---------- */
-let S={obras:[],projetos:[],plantas:[],itens:[],marcas:[],usuarios:[],conf:{},hist:[],cfg:{},del:{}};
+let S={obras:[],projetos:[],plantas:[],itens:[],marcas:[],usuarios:[],pend:[],aceites:[],conf:{},hist:[],cfg:{},del:{}};
 const ui={view:'home',obraId:'',projetoId:'',disc:'',plantaId:'',pagina:1,placing:null,atab:'cad',
- fCat:'',fStatus:'',fPlanta:'',fBusca:'',pav:'',stFilter:new Set(STORDER),catFilter:'',side:true};
+ fCat:'',fStatus:'',fPlanta:'',fBusca:'',pav:'',stFilter:new Set(STORDER),catFilter:'',side:(typeof innerWidth==='number'?innerWidth>=1000:true)};
 let mode=localStorage.getItem('orcehvac.conf.modo')||'escritorio';
 let user=localStorage.getItem('orcehvac.conf.usuario')||'';
 let saveT=null;
@@ -85,8 +85,10 @@ function logH(acao,ent,ref,desc,mud){S.hist.unshift({id:uid(),ts:new Date().toIS
 
 /* ---------- Comparação projeto × obra ---------- */
 const nums=s=>(String(s).replace(/,/g,'.').match(/\d+(?:\.\d+)?/g)||[]).map(Number);
+const TOLS={vazao:.10,vazaoagua:.10,tensaoeq:.05},TOLK=Object.keys(TOLS); // tolerância só para cima: vazões +10%, tensão da energia +5%
 const normT=s=>s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9.]/g,'');
 function same(k,a,b){a=String(a??'').trim();b=String(b??'').trim();if(!a||!b)return a===b;
+ if(TOLK.includes(k)){const x=nums(a),y=nums(b);if(x.length===1&&y.length===1)return y[0]>=x[0]-1e-9&&y[0]<=x[0]*(1+TOLS[k])+1e-9}
  if(F[k].num){const x=nums(a),y=nums(b);if(x.length&&y.length)return x.length===y.length&&x.every((v,i)=>v===y[i])}
  return normT(a)===normT(b)}
 function diverg(id){const it=item(id),c=S.conf[id];if(!it||!c)return[];
@@ -110,10 +112,10 @@ function renderTop(){
  const hasP=!!ui.projetoId,v=ui.view,off=mode==='escritorio';
  root.classList.toggle('office',off);
  $('#cfHead').innerHTML=`<div><div class="eyebrow">Obra e campo</div><h1>Comissionamento de obra</h1><p>${off?'Modo escritório: cadastre equipamentos, terminais, plantas e posicione os pontos.':'Modo campo: abra a planta, toque no ponto e registre o que foi instalado.'}</p></div>
-  <div class="cf-tools"><button class="btn sec usr-btn" data-act="user" title="Minha conta · trocar de usuário · sair">${user?avatar(user,true)+' <span>'+esc(user)+'</span> ▾':'👤 Entrar'}</button>
+  <div class="cf-tools"><button class="btn sec" data-act="qrScan" title="Ler a etiqueta QR do equipamento com a câmera">📷 Ler QR</button><button class="btn sec usr-btn" data-act="user" title="Minha conta · trocar de usuário · sair">${user?avatar(user,true)+' <span>'+esc(user)+'</span> ▾':'👤 Entrar'}</button>
   ${canOffice()?`<div class="seg"><button data-act="mode" data-v="campo" class="${mode==='campo'?'on':''}">Campo</button><button data-act="mode" data-v="escritorio" class="${mode==='escritorio'?'on':''}">Escritório</button></div>`:'<span class="chip s-em_conferencia" title="Seu acesso é só para conferir em campo">Modo campo</span>'}</div>`;
  $('#cfNav').innerHTML=`<button data-act="nav" data-v="home" class="${v==='home'||v==='plant'?'active':''}">Início</button>
-  ${hasP?`<button data-act="nav" data-v="itens" class="${v==='itens'?'active':''}">Itens</button><button data-act="nav" data-v="report" class="${v==='report'?'active':''}">Relatório</button>`:''}
+  ${hasP?`<button data-act="nav" data-v="itens" class="${v==='itens'?'active':''}">Itens</button><button data-act="nav" data-v="pend" class="${v==='pend'?'active':''}">Pendências${pendProj().filter(x=>x.estado!=='fechada').length?' <span class="tabn">'+pendProj().filter(x=>x.estado!=='fechada').length+'</span>':''}</button><button data-act="nav" data-v="painel" class="${v==='painel'?'active':''}">Painel</button><button data-act="nav" data-v="report" class="${v==='report'?'active':''}">Relatório</button>`:''}
   ${off?`<button data-act="nav" data-v="admin" class="${v==='admin'?'active':''}">Administração</button>`:''}`;
 }
 function renderKpi(){
@@ -135,12 +137,12 @@ function render(){guardMode();
  if(!root)return;
  renderTop();renderKpi();
  const m=$('#cfMain');m.className=ui.view==='plant'?'flush':'';
- ({home:viewHome,plant:viewPlant,itens:viewItens,report:viewReport,admin:viewAdmin})[ui.view]();
+ ({home:viewHome,plant:viewPlant,itens:viewItens,pend:viewPend,painel:viewPainel,report:viewReport,admin:viewAdmin})[ui.view]();
 }
 
 /* ---------- Modal helpers ---------- */
 function openModal(html,wide){$('#cfModal').innerHTML=`<div class="mbox ${wide?'wide':''}">${html}</div>`;$('#cfModal').onclick=e=>{if(e.target.id==='cfModal')closeModal()}}
-function closeModal(){$('#cfModal').innerHTML='';modalCleanup&&modalCleanup();modalCleanup=null}
+function closeModal(){RET=null;$('#cfModal').innerHTML='';modalCleanup&&modalCleanup();modalCleanup=null}
 let modalCleanup=null;
 function fieldHTML(f){const v=f.value??'';const id='f_'+f.k;
  let inp;
@@ -163,7 +165,7 @@ function bindRoot(){
  root.addEventListener('input',e=>onSearchInput(e));
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&root&&root.isConnected){if($('#cfModal').innerHTML)closeModal();else if(ui.placing){ui.placing=null;viewerUpdate()}else if(V&&V.cadManual){V.cadManual=false;viewerUpdate()}}});
-ACT.closeModal=()=>closeModal();
+ACT.closeModal=()=>{const r=RET;closeModal();if(r)openConf(r.id,r.draft)};
 ACT.nav=b=>{ui.view=b.dataset.v;closeModal();render()};
 ACT.mode=b=>{const v=b.dataset.v,ap=()=>{mode=v;localStorage.setItem('orcehvac.conf.modo',mode);if(mode==='campo'&&ui.view==='admin')ui.view='home';ui.placing=null;render()};if(v==='escritorio')askOffice(ap);else ap()};
 async function needUser(){return !!me}
@@ -262,8 +264,8 @@ async function loadPage(){
  }catch(e){const l=$('#loading');if(l)l.textContent='Erro ao abrir a planta: '+e.message}
 }
 function fitView(){const vp=$('#vp');if(!vp)return;const r=vp.getBoundingClientRect();
- V.z=Math.min(r.width/V.W,r.height/V.H)*.97;V.tx=(r.width-V.W*V.z)/2;V.ty=(r.height-V.H*V.z)/2;applyT()}
-function applyT(){const st=$('#stage');if(!st)return;st.style.transform=`translate(${V.tx}px,${V.ty}px) scale(${V.z})`;if(V.p&&V.p.tipo==='dxf')drawDxfSoon();st.style.setProperty('--inv',(1/V.z).toFixed(4))}
+ V.z=Math.min(r.width/V.W,r.height/V.H)*.97;V.zf=null;V.tx=(r.width-V.W*V.z)/2;V.ty=(r.height-V.H*V.z)/2;V.zf=V.z;applyT()}
+function applyT(){const st=$('#stage');if(!st)return;st.style.transform=`translate(${V.tx}px,${V.ty}px) scale(${V.z})`;if(V.p&&V.p.tipo==='dxf')drawDxfSoon();st.style.setProperty('--inv',(1/V.z).toFixed(4));st.classList.toggle('lbl',!!V.zf&&V.z>=V.zf*3);st.classList.toggle('nomk',!!ui.hideMk)}
 function zoomAt(f,cx,cy){const vp=$('#vp').getBoundingClientRect();cx??=vp.width/2;cy??=vp.height/2;
  const nz=Math.max(.05,Math.min(25,V.z*f));f=nz/V.z;V.tx=cx-(cx-V.tx)*f;V.ty=cy-(cy-V.ty)*f;V.z=nz;applyT()}
 function centerOn(nx,ny){const r=$('#vp').getBoundingClientRect();V.z=Math.max(V.z,Math.min(r.width/V.W*3,6));V.tx=r.width/2-nx*V.W*V.z;V.ty=r.height/2-ny*V.H*V.z;applyT()}
@@ -272,7 +274,7 @@ function setupPointer(){
  vp.addEventListener('wheel',e=>{e.preventDefault();const r=vp.getBoundingClientRect();zoomAt(e.deltaY<0?1.15:1/1.15,e.clientX-r.left,e.clientY-r.top)},{passive:false});
  vp.addEventListener('pointerdown',e=>{
   vp.setPointerCapture(e.pointerId);V.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
-  if(V.pts.size===1){const mk=e.target.closest('.mk');V.drag={sx:e.clientX,sy:e.clientY,tx:V.tx,ty:V.ty,moved:false,mk:mk?mk.dataset.id:null}}
+  if(V.pts.size===1){const bub=e.target.closest('.mkbub'),mk=bub?null:e.target.closest('.mk');V.drag={sx:e.clientX,sy:e.clientY,tx:V.tx,ty:V.ty,moved:false,mk:mk?mk.dataset.id:null,bub:bub?(e.target.closest('[data-bact]')?.dataset.bact||'x'):null,bid:bub?bub.parentNode.dataset.id:null}}
   else if(V.pts.size===2){const [a,b]=[...V.pts.values()];V.pinch={d:Math.hypot(a.x-b.x,a.y-b.y),z:V.z};if(V.drag)V.drag.moved=true}
  });
  vp.addEventListener('pointermove',e=>{
@@ -289,7 +291,7 @@ function setupPointer(){
   if(!V.pts.has(e.pointerId))return;V.pts.delete(e.pointerId);vp.classList.remove('drag');
   if(V.pts.size<2)V.pinch=null;
   const d=V.drag;if(V.pts.size>0||!d)return;V.drag=null;
-  if(!d.moved){ if(d.mk)markerClick(d.mk); else if(V.cadManual){V.cadManual=false;const nm=normCoords(e);if(V.p.tipo==='dxf')pickDxf(e);viewerUpdate();manualCad(nm)} else if(ui.placing){const nm=normCoords(e);if(nm)placeMarker(ui.placing,nm.x,nm.y)} else if(V.p.tipo==='dxf')pickDxf(e) }
+  if(!d.moved){ if(d.bub){bubAct(d.bub,d.bid)} else if(d.mk)markerTap(d.mk); else if(V.cadManual){V.cadManual=false;const nm=normCoords(e);if(V.p.tipo==='dxf')pickDxf(e);viewerUpdate();manualCad(nm)} else if(ui.placing){const nm=normCoords(e);if(nm)placeMarker(ui.placing,nm.x,nm.y)} else if(V.p.tipo==='dxf'){clearSel();pickDxf(e)} else clearSel() }
   else if(d.mk&&d.pos&&mode==='escritorio'){const m=marcaDe(d.mk);if(m){m.x=d.pos.x;m.y=d.pos.y;save();logH('editou','marcador',d.mk,`Moveu o ponto de ${item(d.mk)?.campos.tag} na planta ${V.p.nome}`)}}
  };
  vp.addEventListener('pointerup',up);vp.addEventListener('pointercancel',up);
@@ -301,6 +303,13 @@ function placeMarker(itemId,x,y){
  if(!it.campos.pavimento&&V.p.pav)it.campos.pavimento=V.p.pav;
  logH('editou','marcador',itemId,`Posicionou ${it.campos.tag} na planta ${V.p.nome} (pág. ${ui.pagina})`);
  ui.placing=null;save();viewerUpdate();renderKpi();toast('Ponto posicionado: '+it.campos.tag)}
+function clearSel(){if(!V)return;V.sel=null;$$('.mk.sel').forEach(m=>{m.classList.remove('sel');m.querySelector('.mkbub')?.remove()})}
+function selMk(id){if(!V)return;clearSel();const el=$(`.mk[data-id="${id}"]`);const it=item(id);if(!el||!it)return;V.sel=id;el.classList.add('sel');
+ const st=statusOf(id),amb=it.campos.ambiente||'',off=mode==='escritorio';
+ el.insertAdjacentHTML('beforeend',`<div class="mkbub"><div class="t">${esc(it.campos.tag)}</div><div class="m">${esc(CATS[it.cat].l)}${amb?' · '+esc(amb):''}</div><div class="s s-${st}">${ST[st]}</div>`+
+  (off?`<div class="a" data-bact="conf">Ver conferência</div><div class="r"><div class="a sec" data-bact="edit">Editar</div><div class="a sec" data-bact="del">Remover ponto</div></div>`:`<div class="a" data-bact="conf">Conferir</div>`)+`</div>`)}
+function bubAct(act,id){if(act==='conf')openConf(id);else if(act==='edit')itemForm(id);else if(act==='del'){ACT.mkDel({dataset:{id}});V.sel=null}}
+function markerTap(id){if(V&&V.sel===id){clearSel();return markerClick(id)}selMk(id)}
 function markerClick(id){
  if(mode==='campo')return openConf(id);
  const it=item(id);
@@ -324,11 +333,12 @@ function viewerUpdate(){
   <span class="sp"></span>
   ${STORDER.map(k=>`<span class="chip s-${k} fchip ${ui.stFilter.has(k)?'on':''}" data-act="stf" data-k="${k}" title="Mostrar/ocultar">${ST[k]} ${cnt[k]}</span>`).join('')}
   <select data-chg="catF"><option value="">Todas as categorias</option>${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${ui.catFilter===k?'selected':''}>${c.l}</option>`).join('')}</select>
-  <button class="btn sec sm" data-act="sideT">☰ Lista</button>${p.tipo==='dxf'?(docCache[p.id]?.rooms?.length?`<select id="roomSel" class="dxq" data-chg="roomF" title="Filtrar por ambiente"><option value="">Todos os ambientes (${docCache[p.id].rooms.length})</option>${roomOpts(docCache[p.id]).map(x=>`<option value="${x.i}" ${V.room===x.i?'selected':''}>${esc(x.r.n)} · ${String(x.r.A).replace('.',',')} m²</option>`).join('')}</select><button class="btn sec sm" data-act="roomList">📍 Por ambiente</button>`:'')+(Object.keys(docCache[p.id]?.kinds||{}).length?`<select id="ductSel" class="dxq" data-chg="ductF" title="Filtrar por tipo de duto"><option value="">Todos os dutos</option>${Object.keys(docCache[p.id].kinds).map(k=>`<option value="${k}" ${V.duct===k?'selected':''}>${esc(KINDS[k])}</option>`).join('')}</select><button class="btn sec sm" data-act="ductList">📏 Medidas dos dutos</button>`:'')+(mode==='escritorio'?'<button class="btn sm" data-act="dxfCad">➕ Cadastrar do desenho</button>':'')+'<input id="dxq" class="dxq" type="search" placeholder="Buscar texto no desenho…" value="'+esc(V.q||'')+'"><button class="btn sec sm" data-act="dxfList">🔎 Equipamentos do desenho</button>'+((docCache[p.id]?.clusters?.length||0)>1?`<button class="btn sec sm" data-act="dxfCl">🗺 Quadros (${docCache[p.id].clusters.length})</button>`:''):''}${mode==='escritorio'?`<button class="btn sm ${V.cadManual?'':'sec'}" data-act="cadManual" title="Clique na planta onde está um equipamento que o programa não identificou">${V.cadManual?'✋ Clique na planta…':'➕ Equipamento não identificado'}</button>`:''}`;
+  <button class="btn sec sm" data-act="sideT">☰ Lista</button><button class="btn sec sm" data-act="mkHide" aria-pressed="${ui.hideMk?'true':'false'}" title="Esconde os pontos para ver o desenho limpo">${ui.hideMk?'👁 Mostrar pontos':'👁 Ocultar pontos'}</button><button class="btn sec sm tbmore" data-act="tbMore" aria-expanded="${ui.tbOpen?'true':'false'}">⚙ Filtros e ferramentas${(ui.catFilter||V.room||V.duct||V.q)?' •':''}</button>${p.tipo==='dxf'?(docCache[p.id]?.rooms?.length?`<select id="roomSel" class="dxq" data-chg="roomF" title="Filtrar por ambiente"><option value="">Todos os ambientes (${docCache[p.id].rooms.length})</option>${roomOpts(docCache[p.id]).map(x=>`<option value="${x.i}" ${V.room===x.i?'selected':''}>${esc(x.r.n)} · ${String(x.r.A).replace('.',',')} m²</option>`).join('')}</select><button class="btn sec sm" data-act="roomList">📍 Por ambiente</button>`:'')+(Object.keys(docCache[p.id]?.kinds||{}).length?`<select id="ductSel" class="dxq" data-chg="ductF" title="Filtrar por tipo de duto"><option value="">Todos os dutos</option>${Object.keys(docCache[p.id].kinds).map(k=>`<option value="${k}" ${V.duct===k?'selected':''}>${esc(KINDS[k])}</option>`).join('')}</select><button class="btn sec sm" data-act="ductList">📏 Medidas dos dutos</button>`:'')+(mode==='escritorio'?'<button class="btn sm" data-act="dxfCad">➕ Cadastrar do desenho</button>':'')+'<input id="dxq" class="dxq" type="search" placeholder="Buscar texto no desenho…" value="'+esc(V.q||'')+'"><button class="btn sec sm" data-act="dxfList">🔎 Equipamentos do desenho</button>'+((docCache[p.id]?.clusters?.length||0)>1?`<button class="btn sec sm" data-act="dxfCl">🗺 Quadros (${docCache[p.id].clusters.length})</button>`:''):''}${mode==='escritorio'?`<button class="btn sm ${V.cadManual?'':'sec'}" data-act="cadManual" title="Clique na planta onde está um equipamento que o programa não identificou">${V.cadManual?'✋ Clique na planta…':'➕ Equipamento não identificado'}</button>`:''}`;
+ $('#tb').classList.toggle('open',!!ui.tbOpen||!!V.cadManual);
  // marcadores
  const vis=here.filter(m=>{const it=item(m.itemId);return ui.stFilter.has(statusOf(it.id))&&(!ui.catFilter||it.cat===ui.catFilter)});
  const mk=$('#mks');if(mk)mk.innerHTML=vis.map(m=>{const it=item(m.itemId),s=statusOf(it.id);
-  return `<div class="mk ${office?'office-drag':''}" data-id="${it.id}" style="left:${m.x*100}%;top:${m.y*100}%" title="${esc(it.campos.tag)} — ${ST[s]}"><i class="s-${s}">${CATS[it.cat].s}</i><b>${esc(it.campos.tag)}</b></div>`}).join('');
+  return `<div class="mk ${office?'office-drag':''}" data-id="${it.id}" style="left:${m.x*100}%;top:${m.y*100}%" title="${esc(it.campos.tag)} — ${ST[s]}"><i class="s-${s}">${CATS[it.cat].s}</i><b>${esc(it.campos.tag)}</b></div>`}).join('');if(V.sel){if(vis.some(m=>m.itemId===V.sel))selMk(V.sel);else V.sel=null}
  $('#vp')?.classList.toggle('placing',!!ui.placing||!!V.cadManual);
  if(p.tipo==='dxf'){V.hl=null;drawDxfSoon()}
  // lateral
@@ -349,11 +359,13 @@ ACT.pg=b=>{const n=ui.pagina+ +b.dataset.d;if(n<1||n>V.pages)return;ui.pagina=n;
 ACT.zm=b=>{b.dataset.f==='fit'?fitView():zoomAt(+b.dataset.f)};
 ACT.stf=b=>{const k=b.dataset.k;ui.stFilter.has(k)?ui.stFilter.delete(k):ui.stFilter.add(k);viewerUpdate()};
 CHG.catF=b=>{ui.catFilter=b.value;viewerUpdate()};
+ACT.mkHide=b=>{ui.hideMk=!ui.hideMk;if(ui.hideMk)clearSel();const st=$('#stage');if(st)st.classList.toggle('nomk',ui.hideMk);if(b){b.textContent=ui.hideMk?'👁 Mostrar pontos':'👁 Ocultar pontos';b.setAttribute('aria-pressed',ui.hideMk?'true':'false')}};
+ACT.tbMore=()=>{ui.tbOpen=!ui.tbOpen;const t=$('#tb');if(t)t.classList.toggle('open',ui.tbOpen);const b=t&&t.querySelector('.tbmore');if(b)b.setAttribute('aria-expanded',ui.tbOpen?'true':'false')};
 ACT.sideT=()=>{ui.side=!ui.side;$('#side').classList.toggle('hide',!ui.side)};
 ACT.startPlace=b=>{ui.placing=b.dataset.id;viewerUpdate()};
 ACT.cancelPlace=(b,e)=>{e.preventDefault();ui.placing=null;if(V)V.cadManual=false;viewerUpdate()};
 ACT.goItem=b=>{const m=marcaDe(b.dataset.id);if(!m)return;
- const go=()=>{centerOn(m.x,m.y);setTimeout(()=>{const el=$(`.mk[data-id="${m.itemId}"]`);el?.classList.add('hl');setTimeout(()=>el?.classList.remove('hl'),2200)},50)};
+ const go=()=>{centerOn(m.x,m.y);setTimeout(()=>{const el=$(`.mk[data-id="${m.itemId}"]`);el?.classList.add('hl');selMk(m.itemId);setTimeout(()=>el?.classList.remove('hl'),2200)},50)};
  if((m.pagina||1)!==ui.pagina){ui.pagina=m.pagina||1;loadPage().then(()=>{viewerUpdate();go()})}else go()};
 
 /* ---------- Leitor/renderizador de DXF ---------- */
@@ -817,10 +829,12 @@ ACT.pickMarkSel=()=>{const id=$('#pickSel')?.value;if(id&&V?.pick){placeMarker(i
 /* =====================================================================
    CONFERÊNCIA EM CAMPO (projeto à esquerda × obra à direita)
    ===================================================================== */
-async function openConf(id){
+let RET=null;
+async function openConf(id,draft){
  const it=item(id);if(!it)return;const cat=CATS[it.cat];
  const c=S.conf[id];
- const d={campos:{...(c?.campos||{})},obs:c?.obs||'',fotos:[...(c?.fotos||[])],added:[],removed:[]};
+ const d={campos:{...(c?.campos||{})},obs:c?.obs||'',fotos:[...(c?.fotos||[])],assin:c?.assin||'',added:[],removed:[]};
+ if(draft)Object.assign(d,draft);
  const REQ=['modelo','fabricante','tipo'].filter(k=>cat.conf.includes(k));
  REQ.forEach(k=>{if(!c||!(k in (c.campos||{})))d.campos[k]=(it.campos[k]||'').trim()});
  const fin=c?.estado==='finalizada';
@@ -828,14 +842,15 @@ async function openConf(id){
  const draw=async()=>{
   const urls=await Promise.all(d.fotos.map(urlFor));
   const st=statusOf(id);
-  openModal(`<h3>${esc(it.campos.tag)} <span class="muted" style="font-weight:400">${cat.l}${pl?' · '+esc(pl):''}</span> <span class="chip s-${st}">${ST[st]}</span></h3>
+  openModal(`<h3>${esc(it.campos.tag)} <span class="muted" style="font-weight:400">${cat.l}${pl?' · '+esc(pl):''}</span> <span class="chip s-${st}">${ST[st]}</span> ${pendBadge(id)}<span class="h3-tools"><button class="btn sec sm" type="button" data-act="confDocs">📎 Documentos${(it.docs||[]).length?' ('+it.docs.length+')':''}</button><button class="btn sec sm" type="button" data-act="confPend">⚑ Pendência</button></span></h3>
   <div class="two">
    <div class="panel proj"><h4>📘 Informações do projeto <span class="muted">(somente leitura)</span></h4>
     ${cat.proj.map(k=>`<div class="pr"><label>${F[k].l}</label><div class="v" id="pv_${k}">${esc(it.campos[k]||'—')}</div></div>`).join('')}</div>
    <div class="panel obra"><h4>🏗 Informações encontradas na obra</h4>
-    ${cat.conf.map(k=>`<div class="pr"><label>${F[k].l}${REQ.includes(k)?' <b style="color:#b42318" title="Obrigatório">*</b>':''}</label><input type="text" data-k="${k}" id="cf_${k}" value="${esc(d.campos[k]||'')}" placeholder="${it.campos[k]?'Projeto: '+esc(it.campos[k]):REQ.includes(k)?'Obrigatório — informe o que foi encontrado':''}" ${REQ.includes(k)?'required':''} autocomplete="off"></div>`).join('')}
+    ${cat.conf.map(k=>`<div class="pr"><label>${F[k].l}${REQ.includes(k)?' <b style="color:#b42318" title="Obrigatório">*</b>':''}${TOLK.includes(k)?` <small class="muted" title="Valor igual ao projeto ou até ${Math.round(TOLS[k]*100)}% acima é considerado conferido">(até +${Math.round(TOLS[k]*100)}%)</small>`:''}</label><input type="text" data-k="${k}" id="cf_${k}" value="${esc(d.campos[k]||'')}" placeholder="${it.campos[k]?'Projeto: '+esc(it.campos[k]):REQ.includes(k)?'Obrigatório — informe o que foi encontrado':''}" ${REQ.includes(k)?'required':''} autocomplete="off"></div>`).join('')}
     ${REQ.length?'<p class="muted" style="margin:0 0 8px;font-size:12px"><b style="color:#b42318">*</b> Obrigatórios: já vêm preenchidos com o que está no projeto. Confira na obra e <b>corrija</b> o que for diferente.</p>':''}
     <div class="pr"><label>Observações</label><textarea id="cf_obs">${esc(d.obs)}</textarea></div>
+    <div class="pr"><label>Assinatura do engenheiro${cfg().assinObrig?' <b style="color:#b42318" title="Obrigatória">*</b>':''}</label><canvas id="cf_sig" class="sigpad"></canvas><div class="sig-foot"><span class="muted">${esc(user||'')}</span><button class="btn sec sm" type="button" data-act="sigClear">Limpar assinatura</button></div></div>
     <div class="pr"><label>Fotografias do equipamento instalado</label>
      <input type="file" id="cf_foto" accept="image/*" multiple capture="environment" style="display:none">
      <button class="btn sec sm" type="button" data-act="pickFoto">📷 Adicionar foto</button>
@@ -843,10 +858,10 @@ async function openConf(id){
    </div></div>
   <p class="muted" style="margin-bottom:0">${c?`Última gravação: ${fdt(c.data)} por ${esc(c.resp||'')}`:'Ainda não conferido.'}</p>
   <div class="mfoot"><button class="btn sec" data-act="confCancel">Fechar sem salvar</button><button class="btn" style="background:var(--azul)" data-act="confSave">💾 Salvar e continuar depois</button><button class="btn" style="background:var(--verde)" data-act="confFinal">✔ Finalizar conferência</button></div>`,true);
-  cat.conf.forEach(k=>liveCmp(k));
+  cat.conf.forEach(k=>liveCmp(k));SG=sigPad($('#cf_sig'),d.assin);
   $('#cf_foto').onchange=async e=>{harvest();for(const f of e.target.files){const b=await compress(f);const bid='ph_'+uid();await blobSet(bid,b);d.fotos.push(bid);d.added.push(bid)}draw()};
  };
- const harvest=()=>{cat.conf.forEach(k=>{const e=$('#cf_'+k);if(e)d.campos[k]=e.value.trim()});const o=$('#cf_obs');if(o)d.obs=o.value};
+ const harvest=()=>{cat.conf.forEach(k=>{const e=$('#cf_'+k);if(e)d.campos[k]=e.value.trim()});const o=$('#cf_obs');if(o)d.obs=o.value;if(SG&&$('#cf_sig'))d.assin=SG.get()};
  const liveCmp=k=>{const e=$('#cf_'+k),v=$('#pv_'+k);if(!e||!v)return;const pv=(it.campos[k]||'').trim(),fv=e.value.trim();
   const cls=!pv||!fv?'':same(k,pv,fv)?'ok':'bad';e.className=cls;v.className='v '+cls};
  const done=async(final)=>{
@@ -855,15 +870,18 @@ async function openConf(id){
   if(final){
    const miss=REQ.filter(k=>!(d.campos[k]||'').trim());
    if(miss.length){toast('Preencha os campos obrigatórios: '+miss.map(k=>F[k].l).join(', '));const e=$('#cf_'+miss[0]);if(e){e.classList.add('bad');e.focus()}return}
+   if(cfg().assinObrig&&!d.assin){toast('Assine antes de finalizar a conferência');return}
    const empt=cat.conf.filter(k=>(it.campos[k]||'').trim()&&!(d.campos[k]||'').trim());
    if(empt.length&&!confirm('Campos sem preenchimento serão considerados DIVERGENTES:\n- '+empt.map(k=>F[k].l).join('\n- ')+'\n\nFinalizar mesmo assim?'))return;
   }
   d.removed.forEach(blobDel);
-  S.conf[id]={campos:d.campos,obs:d.obs,fotos:d.fotos,estado:final?'finalizada':'rascunho',resp:user,data:new Date().toISOString()};
+  S.conf[id]={campos:d.campos,obs:d.obs,fotos:d.fotos,assin:d.assin||'',estado:final?'finalizada':'rascunho',resp:user,data:new Date().toISOString()};
+  if(final)pendSync(id);
   logH('conferiu','conferencia',id,`${final?'Finalizou':'Salvou rascunho da'} conferência de ${it.campos.tag}`);
-  save();modalCleanup=null;closeModal();refreshAfterConf();
+  save();modalCleanup=null;SG=null;closeModal();refreshAfterConf();
   const s=statusOf(id);toast(final?(s==='divergente'?'⚠ Divergência identificada em '+it.campos.tag:'✔ '+it.campos.tag+' conferido'):'Rascunho salvo');
  };
+ ACT.confDocs=()=>{harvest();RET={id,draft:d};docsModal(id)};ACT.confPend=()=>{harvest();RET={id,draft:d};pendNewForm(id)};
  ACT.confSave=()=>done(false);ACT.confFinal=()=>done(true);
  ACT.confCancel=()=>{d.added.forEach(blobDel);modalCleanup=null;closeModal()};
  ACT.pickFoto=()=>$('#cf_foto').click();
@@ -905,12 +923,12 @@ function viewItens(){
  if(!ui.projetoId){ui.view='home';return render()}
  const office=mode==='escritorio',list=filteredItens();
  $('#cfMain').innerHTML=`<div class="card"><div class="row" style="align-items:center"><h2 style="flex:3;margin:0">Itens do projeto — ${esc(proj(ui.projetoId).nome)}</h2>
-  ${office?`<button class="btn" data-act="cadItens" style="flex:none">➕ Puxar do desenho</button><button class="btn sec" data-act="newItem" style="flex:none">+ Novo item</button><button class="btn sec" data-act="csvImp" style="flex:none">⬆ Importar Excel / CSV</button><button class="btn sec" data-act="csvTpl" style="flex:none">⬇ Modelo Excel</button><input type="file" id="csvF" accept=".xlsx,.xls,.xlsm,.csv,text/csv" style="display:none">`:''}</div>
+  ${office?`<button class="btn" data-act="cadItens" style="flex:none">➕ Puxar do desenho</button><button class="btn sec" data-act="newItem" style="flex:none">+ Novo item</button><button class="btn sec" data-act="csvImp" style="flex:none">⬆ Importar Excel / CSV</button><button class="btn sec" data-act="csvTpl" style="flex:none">⬇ Modelo Excel</button><button class="btn sec" data-act="qrLabels" style="flex:none">🏷 Etiquetas QR</button><input type="file" id="csvF" accept=".xlsx,.xls,.xlsm,.csv,text/csv" style="display:none">`:''}</div>
   <div style="margin-top:10px">${filtersHTML()}</div></div>
   <div class="card" style="padding:0;overflow:auto"><div class="grp-bar noprint"><label><input type="checkbox" data-chg="agr" ${ui.agr!==false?'checked':''}> Agrupar por ambiente</label><span class="grp-btns">${ui.agr!==false?'<button class="btn sec sm" data-act="grpAll" data-v="1">Expandir tudo</button><button class="btn sec sm" data-act="grpAll" data-v="0">Recolher tudo</button>':''}<span class="muted">${list.length} item(ns)</span></span></div><table class="tbl-it"><thead><tr><th>Status</th><th>TAG</th><th>Categoria</th><th>Modelo</th><th>Medida</th><th>Vazão</th><th>Planta(s)</th><th></th></tr></thead><tbody>
   ${(()=>{const nat=(a,b)=>String(a.campos.tag||'').localeCompare(String(b.campos.tag||''),'pt-BR',{numeric:true}),roomOf2=i=>i.campos.ambiente||i.campos.localizacao||'';
-   const row=i=>{const s=statusOf(i.id);return `<tr class="click" data-act="openConfRow" data-id="${i.id}"><td><span class="chip s-${s}">${ST[s]}</span></td><td><b>${esc(i.campos.tag)}</b></td><td><span class="cat-pill">${CATS[i.cat].l}</span></td><td>${esc(i.campos.modelo||'')}</td><td>${esc(i.campos.dimensoes||'')}</td><td>${esc(i.campos.vazao||'')}</td><td>${esc(plantasDoItem(i.id).join(', ')||'— sem ponto —')}</td>
-   <td style="white-space:nowrap">${office?`<button class="btn sec sm" data-act="editItem" data-id="${i.id}">✎</button> <button class="btn sec sm" data-act="histItem" data-id="${i.id}" title="Histórico">🕘</button> <button class="btn red sm" data-act="delItem" data-id="${i.id}">🗑</button>`:'<span class="muted">Conferir ›</span>'}</td></tr>`};
+   const row=i=>{const s=statusOf(i.id);return `<tr class="click" data-act="openConfRow" data-id="${i.id}"><td><span class="chip s-${s}">${ST[s]}</span></td><td><b>${esc(i.campos.tag)}</b> ${pendBadge(i.id)}</td><td><span class="cat-pill">${CATS[i.cat].l}</span></td><td>${esc(i.campos.modelo||'')}</td><td>${esc(i.campos.dimensoes||'')}</td><td>${esc(i.campos.vazao||'')}</td><td>${esc(plantasDoItem(i.id).join(', ')||'— sem ponto —')}</td>
+   <td style="white-space:nowrap">${docBtn(i)} ${office?`<button class="btn sec sm" data-act="editItem" data-id="${i.id}">✎</button> <button class="btn sec sm" data-act="histItem" data-id="${i.id}" title="Histórico">🕘</button> <button class="btn red sm" data-act="delItem" data-id="${i.id}">🗑</button>`:'<span class="muted">Conferir ›</span>'}</td></tr>`};
    if(!list.length)return`<tr><td colspan="8" class="muted">Nenhum item${S.itens.length?' com esses filtros':' cadastrado'}.</td></tr>`;
    if(ui.agr===false)return[...list].sort(nat).map(row).join('');
    const g=new Map();list.forEach(i=>{const k=roomOf2(i)||'Sem ambiente';(g.get(k)||g.set(k,[]).get(k)).push(i)});
@@ -943,7 +961,7 @@ ACT.openConfRow=(b,e)=>{if(e.target.closest('button'))return;openConf(b.dataset.
 ACT.newItem=()=>itemForm();
 ACT.editItem=b=>itemForm(b.dataset.id);
 ACT.delItem=b=>{const it=item(b.dataset.id);if(!confirm(`Excluir ${it.campos.tag}? A conferência e o ponto na planta também serão removidos.`))return;delItemById(it.id);save();render()};
-function delItemById(id){const it=item(id);(S.conf[id]?.fotos||[]).forEach(blobDel);delete S.conf[id];S.marcas=S.marcas.filter(m=>m.itemId!==id);S.itens=S.itens.filter(i=>i.id!==id);logH('excluiu','item',id,`Excluiu ${it.campos.tag} (${CATS[it.cat].l})`,Object.entries(it.campos).filter(([k,v])=>v).map(([k,v])=>({campo:F[k].l,de:v,para:''})))}
+function delItemById(id){const it=item(id);(S.conf[id]?.fotos||[]).forEach(blobDel);(it.docs||[]).forEach(d=>blobDel(d.blobId));S.pend=(S.pend||[]).filter(p=>p.itemId!==id);delete S.conf[id];S.marcas=S.marcas.filter(m=>m.itemId!==id);S.itens=S.itens.filter(i=>i.id!==id);logH('excluiu','item',id,`Excluiu ${it.campos.tag} (${CATS[it.cat].l})`,Object.entries(it.campos).filter(([k,v])=>v).map(([k,v])=>({campo:F[k].l,de:v,para:''})))}
 ACT.histItem=b=>{const id=b.dataset.id;const h=S.hist.filter(x=>x.ref===id);
  openModal(`<h3>Histórico — ${esc(item(id)?.campos.tag||'')}</h3><div class="hist">${histHTML(h)}</div><div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`)};
 function histHTML(h){return h.map(x=>`<div class="h"><b>${esc(x.acao)}</b> · ${esc(x.desc)}<br><span class="muted">${fdt(x.ts)} — ${esc(x.user)}</span>${(x.mud||[]).map(m=>`<div class="muted">&nbsp;&nbsp;${esc(m.campo)}: <s>${esc(m.de||'—')}</s> → <b>${esc(m.para||'—')}</b></div>`).join('')}</div>`).join('')||'<p class="muted">Sem registros.</p>'}
@@ -1055,6 +1073,7 @@ async function viewReport(){
    <div><label>Período das conferências</label>${datas.length?fdt(datas[0])+(datas.length>1?' a '+fdt(datas.at(-1)):''):'—'}</div>
    <div><label>Resumo</label>${list.length} itens · ${c.conferido} conf. · ${c.divergente} diverg. · ${c.pendente} pend. · ${c.em_conferencia} em conf.</div></div></div>
   ${list.map(i=>repItem(i)).join('')||'<div class="card muted">Nenhum item.</div>'}
+  ${aceitesRep()}
   <div class="rep-sign"><div><div class="line"></div>${esc(cf.resp||'Responsável técnico')}<br><span class="muted">${esc(cf.crea?'CREA/Registro: '+cf.crea:(cf.empresa||''))}</span></div><div><div class="line"></div>${esc(cf.cliente||'Cliente / responsável pelo aceite')}<br><span class="muted">Data: ____/____/______</span></div></div>`;
 }
 function repItem(i){
@@ -1066,6 +1085,9 @@ function repItem(i){
  ${dv.length?`<div style="margin-top:6px"><b style="color:var(--verm)">Divergências:</b> ${dv.map(k=>`${F[k].l} (previsto ${esc(i.campos[k])} × encontrado ${esc(c.campos[k]||'—')})`).join('; ')}</div>`:''}
  ${c?.obs?`<div style="margin-top:6px"><b>Observações:</b> ${esc(c.obs)}</div>`:''}
  ${c?.fotos?.length?`<div class="photos">${c.fotos.map(f=>`<div class="ph"><img src="${urlCache.get(f)||''}"></div>`).join('')}</div>`:''}
+ ${pendsOf(i.id).length?`<div style="margin-top:6px"><b>Pendências:</b> ${pendsOf(i.id).map(p=>`${esc(p.titulo)} — <i>${PEND_ST[p.estado]}</i>${p.resp?' · resp. '+esc(p.resp):''}${p.prazo?' · prazo '+esc(p.prazo.split('-').reverse().join('/')):''}`).join('; ')}</div>`:''}
+ ${(i.docs||[]).length?`<div class="muted" style="margin-top:4px">Documentos anexados: ${i.docs.map(d=>esc(d.nome)).join(', ')}</div>`:''}
+ ${c?.assin?`<div class="rep-assin"><img src="${c.assin}" alt="Assinatura"><span class="muted">${esc(c.resp||'')}</span></div>`:''}
  ${c?`<div class="muted" style="margin-top:4px">Conferido por ${esc(c.resp||'—')} em ${fdt(c.data)}${c.estado!=='finalizada'?' (rascunho — não finalizada)':''}</div>`:''}</div>`}
 ACT.print=async()=>{const d=desk();if(d){try{const r=await d({action:'print-pdf',name:'Relatorio-conferencia'});if(r)toast('PDF salvo.')}catch(e){toast(e.message)}}else window.print()};
 function repRows(){const list=filteredItens();const rows=[['Obra','Projeto','Pavimento','Planta','Categoria','TAG','Status','Campo','Previsto','Encontrado','Divergente','Observações','Responsável','Data']];
@@ -1077,8 +1099,229 @@ ACT.csvExp=()=>{const q=v=>`"${String(v??'').replace(/"/g,'""')}"`;download('rel
    ADMINISTRAÇÃO (escritório)
    ===================================================================== */
 
+
+/* =====================================================================
+   v0.8 — PENDÊNCIAS, ASSINATURA E ACEITE, DOCUMENTOS, PAINEL, QR, REVISÕES
+   ===================================================================== */
+const hoje=()=>new Date().toLocaleDateString('sv-SE');
+const PEND_ST={aberta:'Aberta',corrigida:'Corrigida — reconferir',fechada:'Fechada'};
+const cm=txt=>({ts:new Date().toISOString(),user:user||'(sem nome)',txt});
+const pendsOf=id=>(S.pend||[]).filter(p=>p.itemId===id);
+const pendOpen=id=>pendsOf(id).filter(p=>p.estado!=='fechada');
+const pendVenc=p=>p.estado!=='fechada'&&p.prazo&&p.prazo<hoje();
+function pendProj(){return(S.pend||[]).filter(p=>item(p.itemId)?.projetoId===ui.projetoId)}
+function pendSync(id){ // chamado ao finalizar uma conferência
+ const it=item(id),c=S.conf[id];if(!it||!c)return;S.pend=S.pend||[];const dv=diverg(id),auto=pendOpen(id).filter(p=>p.auto),now=new Date().toISOString();
+ if(dv.length){
+  const desc=dv.map(k=>`${F[k].l}: previsto ${it.campos[k]} × encontrado ${c.campos[k]||'—'}`).join('; '),tit='Divergência: '+dv.map(k=>F[k].l).join(', ');
+  const ex=auto[0];
+  if(ex){ex.titulo=tit;ex.desc=desc;if(ex.estado==='corrigida'){ex.estado='aberta';ex.coment.push(cm('Reconferido: a divergência continua.'))}}
+  else{S.pend.push({id:uid(),itemId:id,titulo:tit,desc,resp:'',prazo:'',estado:'aberta',auto:true,criada:now,por:user||'',coment:[]});logH('criou','pendencia',id,`Pendência aberta em ${it.campos.tag}: ${tit}`)}
+ }else auto.forEach(p=>{p.estado='fechada';p.fechada=now;p.fechadaPor=user||'';p.coment.push(cm('Fechada automaticamente: reconferido sem divergência.'));logH('editou','pendencia',id,`Pendência fechada em ${it.campos.tag} (reconferido sem divergência)`)});
+}
+function pendBadge(id){const n=pendOpen(id).length;return n?`<span class="pbadge" title="${n} pendência(s) em aberto">⚑ ${n}</span>`:''}
+
+/* ---------- aba Pendências ---------- */
+function viewPend(){
+ if(!ui.projetoId){ui.view='home';return render()}
+ const f=ui.pf=ui.pf||{est:'abertas',resp:''};
+ let l=pendProj();const all=l;
+ if(f.est==='abertas')l=l.filter(p=>p.estado!=='fechada');else if(f.est==='vencidas')l=l.filter(pendVenc);else if(f.est!=='todas')l=l.filter(p=>p.estado===f.est);
+ if(f.resp==='_sem')l=l.filter(p=>!p.resp);else if(f.resp)l=l.filter(p=>p.resp===f.resp);
+ l=[...l].sort((a,b)=>(a.estado==='fechada')-(b.estado==='fechada')||(a.prazo||'9999').localeCompare(b.prazo||'9999')||b.criada.localeCompare(a.criada));
+ const resps=[...new Set(all.map(p=>p.resp).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+ const nA=all.filter(p=>p.estado!=='fechada').length,nV=all.filter(pendVenc).length,nC=all.filter(p=>p.estado==='corrigida').length;
+ const opt=(v,t,cur)=>`<option value="${v}" ${cur===v?'selected':''}>${t}</option>`;
+ $('#cfMain').innerHTML=`<div class="card"><div class="row" style="align-items:center"><h2 style="flex:3;margin:0">Pendências — ${esc(proj(ui.projetoId).nome)}</h2><button class="btn" data-act="pendNew" style="flex:none">+ Nova pendência</button></div>
+  <p class="muted" style="margin:6px 0 0">Quando uma conferência é finalizada com divergência, a pendência é aberta sozinha. Defina o <b>responsável</b> e o <b>prazo</b>; depois que for corrigida, <b>reconfira</b> o item: se estiver igual ao projeto, a pendência fecha sozinha.</p>
+  <div class="pend-kpis"><div><b>${nA}</b><span>em aberto</span></div><div class="${nV?'bad':''}"><b>${nV}</b><span>vencidas</span></div><div><b>${nC}</b><span>aguardando reconferência</span></div><div><b>${all.length-nA}</b><span>fechadas</span></div></div>
+  <div class="row" style="margin-top:10px"><div class="fld"><label>Mostrar</label><select data-chg="pEst">${opt('abertas','Em aberto',f.est)}${opt('vencidas','Vencidas',f.est)}${opt('corrigida','Aguardando reconferência',f.est)}${opt('fechada','Fechadas',f.est)}${opt('todas','Todas',f.est)}</select></div>
+  <div class="fld"><label>Responsável</label><select data-chg="pResp">${opt('','Todos',f.resp)}${opt('_sem','Sem responsável',f.resp)}${resps.map(r=>opt(esc(r),esc(r),f.resp)).join('')}</select></div></div></div>
+  <div class="card" style="padding:0;overflow:auto"><table class="tbl-pend"><thead><tr><th>Situação</th><th>TAG</th><th>Pendência</th><th>Responsável</th><th>Prazo</th><th></th></tr></thead><tbody>
+  ${l.map(p=>{const it=item(p.itemId);return `<tr class="click" data-act="pendOpen" data-id="${p.id}"><td><span class="chip pst-${p.estado}">${PEND_ST[p.estado]}</span></td><td><b>${esc(it?.campos.tag||'?')}</b></td><td>${esc(p.titulo)}<div class="muted" style="font-size:12px">${esc((p.desc||'').slice(0,140))}</div></td><td>${p.resp?esc(p.resp):'<span class="muted">— definir —</span>'}</td><td class="${pendVenc(p)?'venc':''}">${p.prazo?esc(p.prazo.split('-').reverse().join('/'))+(pendVenc(p)?' ⚠':''):'<span class="muted">—</span>'}</td><td class="muted">${p.coment.length?'💬 '+p.coment.length:''}</td></tr>`}).join('')||`<tr><td colspan="6" class="muted">Nenhuma pendência${all.length?' com esse filtro':' neste projeto. Quando uma conferência encontrar divergência, ela aparece aqui'}.</td></tr>`}
+  </tbody></table></div>`;
+}
+CHG.pEst=b=>{ui.pf.est=b.value;viewPend()};CHG.pResp=b=>{ui.pf.resp=b.value;viewPend()};
+let PD=null;
+function pendModal(id){
+ const p=(S.pend||[]).find(x=>x.id===id);if(!p)return;PD=id;const it=item(p.itemId),off=canOffice(),cur=p.estado;
+ const users=S.usuarios.map(u=>u.nome);
+ openModal(`<h3>⚑ ${esc(it?.campos.tag||'?')} — ${esc(p.titulo)} <span class="chip pst-${cur}">${PEND_ST[cur]}</span></h3>
+  <p class="muted" style="margin-top:0">Aberta por ${esc(p.por||'—')} em ${fdt(p.criada)}${p.fechada?` · fechada por ${esc(p.fechadaPor||'—')} em ${fdt(p.fechada)}`:''}</p>
+  <div class="fld"><label for="pd_desc">Descrição</label><textarea id="pd_desc" ${cur==='fechada'?'readonly':''}>${esc(p.desc||'')}</textarea></div>
+  <div class="two"><div class="fld"><label for="pd_resp">Responsável pela correção</label><input id="pd_resp" list="pd_users" value="${esc(p.resp||'')}" ${cur==='fechada'?'readonly':''}><datalist id="pd_users">${users.map(u=>`<option value="${esc(u)}">`).join('')}</datalist></div>
+  <div class="fld"><label for="pd_prazo">Prazo</label><input id="pd_prazo" type="date" value="${esc(p.prazo||'')}" ${cur==='fechada'?'readonly':''}></div></div>
+  <h4 style="margin:12px 0 6px">Comentários e histórico</h4>
+  <div class="pd-log">${p.coment.length?p.coment.slice().reverse().map(c=>`<div class="pd-c"><b>${esc(c.user)}</b> <span class="muted">${fdt(c.ts)}</span><div>${esc(c.txt)}</div></div>`).join(''):'<div class="muted">Nenhum comentário ainda.</div>'}</div>
+  <div class="fld"><label for="pd_new">Novo comentário</label><textarea id="pd_new" placeholder="Ex.: modelo trocado, aguardando fornecedor…"></textarea></div>
+  <div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar janela</button>
+   ${off&&cur!=='fechada'?'':''}${cur==='aberta'?`<button class="btn" style="background:var(--azul)" data-act="pendSt" data-v="corrigida">✔ Marcar como corrigida</button>`:''}
+   ${cur!=='fechada'?`<button class="btn" style="background:var(--verde)" data-act="pendReconf">📋 Reconferir item</button>`:''}
+   ${cur==='corrigida'?`<button class="btn sec" data-act="pendSt" data-v="aberta">↩ Reabrir</button>`:''}
+   ${cur==='fechada'?`<button class="btn sec" data-act="pendSt" data-v="aberta">↩ Reabrir</button>`:''}
+   ${off&&cur!=='fechada'?`<button class="btn sec" data-act="pendSt" data-v="fechada">Fechar pendência</button>`:''}
+   ${off?`<button class="btn red" data-act="pendDel">🗑</button>`:''}
+   <button class="btn" data-act="pendSave">Salvar</button></div>`,true);
+}
+function pendRead(p){const d=$('#pd_desc'),r=$('#pd_resp'),z=$('#pd_prazo'),n=$('#pd_new');if(!d)return false;
+ const ch=[];if(d.value!==(p.desc||''))p.desc=d.value;
+ if(r.value.trim()!==(p.resp||'')){ch.push('Responsável: '+(r.value.trim()||'—'));p.resp=r.value.trim()}
+ if(z.value!==(p.prazo||'')){ch.push('Prazo: '+(z.value?z.value.split('-').reverse().join('/'):'—'));p.prazo=z.value}
+ if(ch.length)p.coment.push(cm(ch.join(' · ')));
+ if(n.value.trim()){p.coment.push(cm(n.value.trim()));n.value=''}return true}
+ACT.pendOpen=b=>pendModal(b.dataset.id);
+ACT.pendSave=()=>{const p=S.pend.find(x=>x.id===PD);if(!p)return;pendRead(p);logH('editou','pendencia',p.itemId,'Atualizou pendência de '+item(p.itemId)?.campos.tag);save();if(ui.view==='pend')viewPend();pendModal(p.id)};
+ACT.pendSt=b=>{const p=S.pend.find(x=>x.id===PD);if(!p)return;pendRead(p);const v=b.dataset.v;
+ if(v==='fechada'){if(!confirm('Fechar esta pendência sem reconferir o item?'))return;p.fechada=new Date().toISOString();p.fechadaPor=user||''}
+ else{delete p.fechada;delete p.fechadaPor}
+ p.estado=v;p.coment.push(cm({corrigida:'Marcada como corrigida — aguardando reconferência.',aberta:'Reaberta.',fechada:'Fechada manualmente.'}[v]));
+ logH('editou','pendencia',p.itemId,`Pendência de ${item(p.itemId)?.campos.tag}: ${PEND_ST[v]}`);save();renderTop();if(ui.view==='pend')viewPend();pendModal(p.id)};
+ACT.pendReconf=()=>{const p=S.pend.find(x=>x.id===PD);if(!p)return;pendRead(p);save();closeModal();openConf(p.itemId)};
+ACT.pendDel=()=>{const p=S.pend.find(x=>x.id===PD);if(!p||!confirm('Excluir esta pendência?'))return;S.pend=S.pend.filter(x=>x.id!==PD);save();closeModal();renderTop();if(ui.view==='pend')viewPend()};
+function pendNewForm(itemId){
+ const l=projItens(ui.projetoId).slice().sort((a,b)=>String(a.campos.tag).localeCompare(String(b.campos.tag),'pt-BR',{numeric:true}));
+ const cur=itemId?item(itemId):null;
+ formModal('Nova pendência',[{k:'tag',l:'TAG do equipamento',value:cur?cur.campos.tag:'',list:l.map(i=>i.campos.tag)},{k:'titulo',l:'O que está pendente',value:''},{k:'desc',l:'Detalhes (opcional)',type:'textarea'},{k:'resp',l:'Responsável (opcional)',list:S.usuarios.map(u=>u.nome)},{k:'prazo',l:'Prazo (AAAA-MM-DD, opcional)'}],v=>{
+  const it=l.find(i=>String(i.campos.tag).toLowerCase()===v.tag.toLowerCase());if(!it){toast('TAG não encontrada neste projeto');return false}
+  if(!v.titulo){toast('Escreva o que está pendente');return false}
+  if(v.prazo&&!/^\d{4}-\d{2}-\d{2}$/.test(v.prazo)){toast('Prazo no formato AAAA-MM-DD, ex.: 2026-12-15');return false}
+  S.pend=S.pend||[];S.pend.push({id:uid(),itemId:it.id,titulo:v.titulo,desc:v.desc,resp:v.resp,prazo:v.prazo,estado:'aberta',auto:false,criada:new Date().toISOString(),por:user||'',coment:[]});
+  logH('criou','pendencia',it.id,`Pendência aberta em ${it.campos.tag}: ${v.titulo}`);save();{const r=RET;if(r)setTimeout(()=>openConf(r.id,r.draft),0)}renderTop();if(ui.view==='pend')viewPend();else if(ui.view==='plant')viewerUpdate();toast('Pendência aberta em '+it.campos.tag)},'Abrir pendência')}
+ACT.pendNew=()=>pendNewForm('');
+ACT.pendItem=b=>{pendNewForm(b.dataset.id)};
+
+/* ---------- Assinatura (desenhar no tablet) ---------- */
+function sigPad(cv,init){const g=cv.getContext('2d');cv.width=640;cv.height=200;g.lineWidth=3;g.lineCap='round';g.lineJoin='round';g.strokeStyle='#0F222B';
+ let touched=false,drawing=false,lx=0,ly=0,base=init||'';
+ const pos=e=>{const r=cv.getBoundingClientRect();return[(e.clientX-r.left)*cv.width/r.width,(e.clientY-r.top)*cv.height/r.height]};
+ cv.addEventListener('pointerdown',e=>{drawing=true;touched=true;try{cv.setPointerCapture(e.pointerId)}catch{}[lx,ly]=pos(e);g.beginPath();g.moveTo(lx,ly);g.lineTo(lx+.1,ly);g.stroke();e.preventDefault()});
+ cv.addEventListener('pointermove',e=>{if(!drawing)return;const[x,y]=pos(e);g.beginPath();g.moveTo(lx,ly);g.lineTo(x,y);g.stroke();lx=x;ly=y;e.preventDefault()});
+ const end=()=>{drawing=false};cv.addEventListener('pointerup',end);cv.addEventListener('pointercancel',end);
+ if(init){const im=new Image();im.onload=()=>g.drawImage(im,0,0,cv.width,cv.height);im.src=init}
+ return{get:()=>touched?cv.toDataURL('image/png'):base,clear:()=>{g.clearRect(0,0,cv.width,cv.height);touched=false;base=''}}}
+let SG=null;
+ACT.sigClear=()=>{SG&&SG.clear()};
+
+/* ---------- Painel: andamento por sistema, pavimento e pessoa + aceite ---------- */
+const aceiteDe=(tipo,chave)=>(S.aceites||[]).find(a=>a.projetoId===ui.projetoId&&a.tipo===tipo&&a.chave===chave);
+const escopoItens=(tipo,chave)=>projItens(ui.projetoId).filter(i=>tipo==='pav'?pavLabel(i)===chave:CATS[i.cat].l===chave);
+function escopoOk(l){if(!l.length)return 'Nenhum item neste escopo.';const nc=l.filter(i=>statusOf(i.id)!=='conferido').length;if(nc)return nc+' item(ns) ainda não estão conferidos sem divergência.';const np=l.filter(i=>pendOpen(i.id).length).length;if(np)return np+' item(ns) com pendência em aberto.';return ''}
+function bar(c,t){const seg=k=>c[k]?`<span class="s-${k}" style="width:${c[k]/t*100}%" title="${ST[k]}: ${c[k]}"></span>`:'';return `<div class="cfbar">${STORDER.map(seg).join('')}</div>`}
+function painelRows(tipo,groups){
+ return groups.map(([chave,l])=>{const c=counts(l),t=l.length,pc=t?Math.round(c.conferido/t*100):0,pa=l.reduce((n,i)=>n+pendOpen(i.id).length,0),ac=aceiteDe(tipo,chave),why=escopoOk(l);
+  const acc=ac?`<span class="chip s-conferido" title="Aceito por ${esc(ac.nome)} em ${fdt(ac.ts)}">✔ Aceito</span> <button class="btn sec sm" data-act="aceiteView" data-t="${tipo}" data-k="${esc(chave)}">Ver</button>${why?' <span title="Itens mudaram depois do aceite: '+esc(why)+'">⚠</span>':''}`:`<button class="btn sm" data-act="aceiteNew" data-t="${tipo}" data-k="${esc(chave)}" ${why?'disabled':''} title="${why?esc(why):'Registrar o aceite com assinatura'}">Registrar aceite</button>`;
+  return `<tr><td><b>${esc(chave)}</b></td><td>${t}</td><td>${c.conferido}</td><td>${c.divergente}</td><td>${c.pendente}</td><td>${c.em_conferencia}</td><td style="min-width:130px">${pc}%${bar(c,t)}</td><td>${pa?`<b style="color:var(--verm)">${pa}</b>`:'0'}</td><td style="white-space:nowrap">${canOffice()?acc:(ac?'<span class="chip s-conferido">✔ Aceito</span>':'—')}</td></tr>`}).join('')}
+function viewPainel(){
+ if(!ui.projetoId){ui.view='home';return render()}
+ const its=projItens(ui.projetoId),c=counts(its),pend=pendProj(),abertas=pend.filter(p=>p.estado!=='fechada');
+ const gp=new Map();its.forEach(i=>{const k=pavLabel(i);(gp.get(k)||gp.set(k,[]).get(k)).push(i)});
+ const gc=new Map();its.forEach(i=>{const k=CATS[i.cat].l;(gc.get(k)||gc.set(k,[]).get(k)).push(i)});
+ const pess=new Map();const P=n=>pess.get(n)||pess.set(n,{conf:0,div:0,ab:0,venc:0,fech:0,ult:''}).get(n);
+ its.forEach(i=>{const x=S.conf[i.id];if(x&&x.estado==='finalizada'&&x.resp){const r=P(x.resp);r.conf++;if(diverg(i.id).length)r.div++;if((x.data||'')>r.ult)r.ult=x.data}});
+ pend.forEach(p=>{const n=p.resp||'(sem responsável)';const r=P(n);if(p.estado==='fechada')r.fech++;else{r.ab++;if(pendVenc(p))r.venc++}});
+ const head=(t)=>`<thead><tr><th>${t}</th><th>Itens</th><th>Conferidos</th><th>Divergentes</th><th>Pendentes</th><th>Em conf.</th><th>Andamento</th><th>Pend. abertas</th><th>Aceite</th></tr></thead>`;
+ $('#cfMain').innerHTML=`<div class="card"><h2 style="margin:0">Painel — ${esc(proj(ui.projetoId).nome)}</h2>
+  <div class="pend-kpis"><div class="${abertas.length?'bad':''}"><b>${abertas.length}</b><span>pendências abertas</span></div><div class="${pend.filter(pendVenc).length?'bad':''}"><b>${pend.filter(pendVenc).length}</b><span>vencidas</span></div><div><b>${pend.filter(x=>x.estado==='corrigida').length}</b><span>aguardando reconferência</span></div><div><b>${pend.filter(x=>x.estado==='fechada').length}</b><span>fechadas</span></div></div></div>
+  <div class="card" style="padding:0;overflow:auto"><h3 style="padding:14px 16px 0;margin:0">Por sistema</h3><table class="tbl-pend">${head('Sistema')}<tbody>${painelRows('cat',[...gc.entries()].sort((a,b)=>a[0].localeCompare(b[0],'pt-BR')))||''}</tbody></table></div>
+  <div class="card" style="padding:0;overflow:auto"><h3 style="padding:14px 16px 0;margin:0">Por pavimento</h3><table class="tbl-pend">${head('Pavimento')}<tbody>${painelRows('pav',[...gp.entries()].sort((a,b)=>pavSort(a[0],b[0])))}</tbody></table></div>
+  <div class="card" style="padding:0;overflow:auto"><h3 style="padding:14px 16px 0;margin:0">Por pessoa</h3><table class="tbl-pend"><thead><tr><th>Pessoa</th><th>Conferências finalizadas</th><th>Com divergência</th><th>Pendências abertas</th><th>Vencidas</th><th>Fechadas</th><th>Última conferência</th></tr></thead><tbody>
+  ${[...pess.entries()].sort((a,b)=>b[1].ab-a[1].ab||b[1].conf-a[1].conf).map(([n,r])=>`<tr><td><b>${esc(n)}</b></td><td>${r.conf}</td><td>${r.div}</td><td>${r.ab}</td><td class="${r.venc?'venc':''}">${r.venc}</td><td>${r.fech}</td><td>${r.ult?fdt(r.ult):'—'}</td></tr>`).join('')||'<tr><td colspan="7" class="muted">Ainda não há conferências nem pendências.</td></tr>'}</tbody></table></div>`;
+}
+let AC=null;
+ACT.aceiteNew=b=>{const tipo=b.dataset.t,chave=b.dataset.k,l=escopoItens(tipo,chave),why=escopoOk(l);if(why)return toast(why);AC={tipo,chave};
+ openModal(`<h3>Registrar aceite — ${esc(chave)}</h3><p class="muted">${l.length} item(ns) conferido(s) sem divergência e sem pendência em aberto. Quem recebe (cliente, fiscal ou gerente) assina abaixo.</p>
+  <div class="two"><div class="fld"><label for="ac_nome">Nome de quem aceita</label><input id="ac_nome" type="text" value="${esc(cfg().cliente||'')}"></div><div class="fld"><label for="ac_cargo">Cargo / empresa</label><input id="ac_cargo" type="text"></div></div>
+  <div class="fld"><label for="ac_obs">Observações</label><textarea id="ac_obs"></textarea></div>
+  <div class="fld"><label>Assinatura</label><canvas id="ac_sig" class="sigpad"></canvas><button class="btn sec sm" type="button" data-act="sigClear">Limpar assinatura</button></div>
+  <div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" style="background:var(--verde)" data-act="aceiteSave">✔ Registrar aceite</button></div>`,true);
+ SG=sigPad($('#ac_sig'),'')};
+ACT.aceiteSave=()=>{if(!AC)return;const nome=$('#ac_nome').value.trim(),sig=SG?SG.get():'';if(!nome)return toast('Informe o nome de quem aceita');if(!sig)return toast('A assinatura é necessária para registrar o aceite');
+ const l=escopoItens(AC.tipo,AC.chave),why=escopoOk(l);if(why)return toast(why);
+ S.aceites=S.aceites||[];S.aceites.push({id:uid(),projetoId:ui.projetoId,tipo:AC.tipo,chave:AC.chave,ts:new Date().toISOString(),user:user||'',nome,cargo:$('#ac_cargo').value.trim(),obs:$('#ac_obs').value.trim(),assin:sig,n:l.length});
+ logH('criou','aceite',ui.projetoId,`Aceite registrado: ${AC.chave} (${l.length} itens) por ${nome}`);save();SG=null;closeModal();viewPainel();toast('Aceite registrado')};
+ACT.aceiteView=b=>{const a=aceiteDe(b.dataset.t,b.dataset.k);if(!a)return;AC=a;
+ openModal(`<h3>Aceite — ${esc(a.chave)}</h3><p>Aceito por <b>${esc(a.nome)}</b>${a.cargo?' ('+esc(a.cargo)+')':''} em ${fdt(a.ts)}.<br><span class="muted">Registrado por ${esc(a.user||'—')} · ${a.n} item(ns) na data do aceite.</span></p>${a.obs?`<p>${esc(a.obs)}</p>`:''}<img src="${a.assin}" alt="Assinatura" class="sigimg">
+  <div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button>${canOffice()?'<button class="btn red" data-act="aceiteDel">Cancelar este aceite</button>':''}</div>`)};
+ACT.aceiteDel=()=>{if(!AC||!confirm('Cancelar este aceite? A assinatura será apagada.'))return;S.aceites=S.aceites.filter(x=>x.id!==AC.id);logH('excluiu','aceite',ui.projetoId,'Cancelou aceite de '+AC.chave);save();closeModal();viewPainel()};
+function aceitesRep(){const l=(S.aceites||[]).filter(a=>a.projetoId===ui.projetoId);if(!l.length)return '';
+ return `<div class="rep-item"><b style="font-size:16px">Aceites registrados</b>${l.map(a=>`<div class="rep-ac"><img src="${a.assin}" alt=""><div><b>${esc(a.chave)}</b> <span class="muted">(${a.tipo==='pav'?'pavimento':'sistema'} · ${a.n} itens)</span><br>Aceito por ${esc(a.nome)}${a.cargo?' — '+esc(a.cargo):''}<br><span class="muted">${fdt(a.ts)}${a.obs?' · '+esc(a.obs):''}</span></div></div>`).join('')}</div>`}
+
+/* ---------- Documentos por equipamento ---------- */
+const fsz=n=>n>=1048576?(n/1048576).toFixed(1).replace('.',',')+' MB':Math.max(1,Math.round(n/1024))+' KB';
+let DOCID=null;
+function docsModal(id){const it=item(id);if(!it)return;DOCID=id;it.docs=it.docs||[];const off=canOffice();
+ openModal(`<h3>📎 Documentos — ${esc(it.campos.tag)}</h3><p class="muted" style="margin-top:0">Manual, certificado, ART, folha de dados, foto da placa… tudo que acompanha o equipamento na entrega.</p>
+  <div class="doc-list">${it.docs.map(d=>`<div class="doc-r"><div class="grow"><b>${esc(d.nome)}</b><div class="muted">${fsz(d.size||0)} · ${esc(d.user||'')} · ${fdt(d.ts)}</div></div><button class="btn sec sm" data-act="docOpen" data-i="${d.id}">Abrir</button>${off||true?`<button class="btn red sm" data-act="docDel" data-i="${d.id}" title="Remover">🗑</button>`:''}</div>`).join('')||'<div class="muted">Nenhum documento anexado.</div>'}</div>
+  <input type="file" id="doc_f" multiple style="display:none"><div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button><button class="btn" data-act="docAdd">➕ Anexar arquivo</button></div>`);
+ $('#doc_f').onchange=async e=>{const it2=item(DOCID);if(!it2)return;for(const f of e.target.files){const bid='doc_'+uid();await blobSet(bid,f);it2.docs.push({id:uid(),nome:f.name,mime:f.type||'',size:f.size,blobId:bid,ts:new Date().toISOString(),user:user||''});logH('editou','item',DOCID,`Anexou documento ${f.name} em ${it2.campos.tag}`)}save();docsModal(DOCID);if(ui.view==='itens')viewItens()}}
+ACT.docs=b=>docsModal(b.dataset.id);
+ACT.docAdd=()=>$('#doc_f').click();
+ACT.docOpen=async b=>{const it=item(DOCID),d=it?.docs.find(x=>x.id===b.dataset.i);if(!d)return;const bl=await blobGet(d.blobId);if(!bl)return toast('Arquivo não encontrado neste aparelho (foi anexado em outro).');
+ if((d.mime||'').startsWith('image/')){const u=URL.createObjectURL(bl),lb=document.createElement('div');lb.className='cf-lightbox';lb.innerHTML=`<img src="${u}" alt="">`;lb.onclick=()=>{lb.remove();URL.revokeObjectURL(u)};root.append(lb)}
+ else download(d.nome,new Blob([bl],{type:d.mime||'application/octet-stream'}))};
+ACT.docDel=b=>{const it=item(DOCID),d=it?.docs.find(x=>x.id===b.dataset.i);if(!d||!confirm('Remover "'+d.nome+'"?'))return;blobDel(d.blobId);it.docs=it.docs.filter(x=>x.id!==d.id);logH('editou','item',DOCID,`Removeu documento ${d.nome} de ${it.campos.tag}`);save();docsModal(DOCID);if(ui.view==='itens')viewItens()};
+const docBtn=i=>`<button class="btn sec sm" data-act="docs" data-id="${i.id}" title="Documentos do equipamento">📎${(i.docs||[]).length?' '+i.docs.length:''}</button>`;
+
+/* ---------- QR code: etiquetas e leitura ---------- */
+const qrText=i=>'HVACCX|'+i.id+'|'+i.campos.tag;
+async function ensureQr(){if(globalThis.qrcode)return true;try{await loadVendor('qrcode.js')}catch{return false}return !!globalThis.qrcode}
+function qrSvg(text){const q=globalThis.qrcode(0,'M');q.addData(text);q.make();return q.createSvgTag({cellSize:4,margin:0,scalable:true})}
+ACT.qrLabels=async()=>{if(!await ensureQr())return toast('Biblioteca de QR indisponível');const list=filteredItens();if(!list.length)return toast('Nenhum item na lista (veja os filtros)');
+ const nat=(a,b)=>String(a.campos.tag).localeCompare(String(b.campos.tag),'pt-BR',{numeric:true});
+ let o=document.getElementById('cfLab');if(o)o.remove();o=document.createElement('div');o.id='cfLab';
+ o.innerHTML=`<div class="lab-bar"><b>Etiquetas QR — ${list.length} equipamento(s)</b><span class="muted">Cole no equipamento. O engenheiro lê com o botão “📷 Ler QR” e a conferência abre direto.</span><button class="btn" data-lab="print">🖨 Imprimir / Salvar PDF</button><button class="btn sec" data-lab="close">Fechar</button></div>
+  <div class="lab-grid">${list.slice().sort(nat).map(i=>`<div class="lab"><div class="lab-qr">${qrSvg(qrText(i))}</div><div class="lab-t"><b>${esc(i.campos.tag)}</b><span>${esc(CATS[i.cat].l)}</span>${i.campos.ambiente?`<span>${esc(i.campos.ambiente)}</span>`:''}</div></div>`).join('')}</div>`;
+ document.body.append(o);document.body.classList.add('cf-labp');
+ o.onclick=e=>{const a=e.target.closest('[data-lab]');if(!a)return;if(a.dataset.lab==='close'){o.remove();document.body.classList.remove('cf-labp')}else ACT.print()}};
+let QRS=null;
+async function ensureJsQr(){if(globalThis.jsQR)return true;try{await loadVendor('jsQR.js')}catch{return false}return !!globalThis.jsQR}
+function qrStop(){if(!QRS)return;QRS.on=false;try{QRS.stream&&QRS.stream.getTracks().forEach(t=>t.stop())}catch{}QRS.el&&QRS.el.remove();QRS=null}
+function qrOpenItem(text){
+ text=String(text||'').trim();let it=null;
+ const m=/^HVACCX\|([^|]+)\|(.*)$/.exec(text);
+ if(m)it=item(m[1])||S.itens.find(i=>String(i.campos.tag).toLowerCase()===m[2].toLowerCase());
+ if(!it)it=S.itens.find(i=>String(i.campos.tag).toLowerCase()===text.toLowerCase());
+ if(!it){toast('Equipamento não encontrado neste aparelho: '+text);return false}
+ const p=proj(it.projetoId);if(p){ui.projetoId=p.id;ui.obraId=p.obraId}
+ closeModal();openConf(it.id);return true}
+ACT.qrScan=async()=>{qrStop();const el=document.createElement('div');el.className='qr-ov';
+ el.innerHTML=`<div class="qr-box"><b>Aponte a câmera para a etiqueta QR do equipamento</b><div class="qr-vw"><video playsinline muted></video><i></i></div><div class="qr-msg muted">Iniciando câmera…</div>
+  <div class="row" style="margin-top:8px"><input type="text" class="qr-man" placeholder="Ou digite a TAG (ex.: D-ADM-01)"><button class="btn" data-q="go" style="flex:none">Abrir</button><button class="btn sec" data-q="x" style="flex:none">Fechar</button></div></div>`;
+ root.append(el);QRS={el,on:true};
+ el.onclick=e=>{const a=e.target.closest('[data-q]');if(!a)return;if(a.dataset.q==='x')qrStop();else{const v=el.querySelector('.qr-man').value;if(v&&qrOpenItem(v))qrStop()}};
+ el.querySelector('.qr-man').onkeydown=e=>{if(e.key==='Enter')el.querySelector('[data-q=go]').click()};
+ const msg=t=>{const m=el.querySelector('.qr-msg');if(m)m.textContent=t};
+ if(!navigator.mediaDevices?.getUserMedia)return msg('Este aparelho/navegador não permite usar a câmera aqui. Digite a TAG abaixo.');
+ if(!await ensureJsQr())return msg('Leitor de QR indisponível. Digite a TAG abaixo.');
+ try{const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});if(!QRS||QRS.el!==el){stream.getTracks().forEach(t=>t.stop());return}
+  QRS.stream=stream;const v=el.querySelector('video');v.srcObject=stream;await v.play();msg('Procurando QR…');
+  const cv=document.createElement('canvas'),g=cv.getContext('2d',{willReadFrequently:true});
+  const tick=()=>{if(!QRS||QRS.el!==el||!QRS.on)return;
+   if(v.videoWidth){const w=Math.min(640,v.videoWidth);cv.width=w;cv.height=Math.round(v.videoHeight*w/v.videoWidth);g.drawImage(v,0,0,cv.width,cv.height);
+    const r=globalThis.jsQR(g.getImageData(0,0,cv.width,cv.height).data,cv.width,cv.height,{inversionAttempts:'dontInvert'});
+    if(r&&r.data){if(qrOpenItem(r.data)){qrStop();return}else{QRS.on=false;setTimeout(()=>{if(QRS&&QRS.el===el)QRS.on=true,tick()},1800);return}}}
+   setTimeout(tick,120)};
+  tick();
+ }catch(e){msg('Câmera indisponível ('+(e.name==='NotAllowedError'?'acesso negado — permita a câmera para este site':e.message)+'). Digite a TAG abaixo.')}};
+
+/* ---------- Revisões de planta ---------- */
+const revLetra=n=>{let s='';n=n+1;while(n>0){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26)}return s};
+ACT.revPl=b=>{const p=planta(b.dataset.id);if(!p)return;p.revs=p.revs||[];const atual=p.rev||revLetra(p.revs.length);
+ formModal(`Nova revisão — ${p.nome}`,[{k:'file',l:`Arquivo da nova revisão (atual: revisão ${atual}) — PDF, DXF, PNG ou JPG`,type:'file',accept:'.pdf,.dxf,.png,.jpg,.jpeg'},{k:'nota',l:'O que mudou (opcional)'}],async v=>{
+  if(!v.file){toast('Selecione o arquivo');return false}const tipo=fileTipo(v.file);if(!tipo){toast('Formato não suportado — use PDF, DXF, PNG ou JPG');return false}
+  p.revs.push({rev:atual,blobId:p.blobId,tipo:p.tipo,ts:new Date().toISOString(),user:user||'',nota:p.nota||''});
+  p.blobId='pl_'+uid();await blobSet(p.blobId,v.file);p.tipo=tipo;p.paginas=0;{const used=new Set(p.revs.map(r=>r.rev));let n=p.revs.length,L;do{L=revLetra(n++)}while(used.has(L));p.rev=L}p.nota=v.nota||'';p.revAviso=true;delete docCache[p.id];
+  logH('editou','planta',p.id,`Nova revisão ${p.rev} da planta ${p.nome}`);save();render();toast(`Revisão ${p.rev} enviada. Os ${S.marcas.filter(m=>m.plantaId===p.id).length} ponto(s) foram mantidos — confira se continuam no lugar.`)},'Enviar revisão')};
+ACT.revList=b=>{const p=planta(b.dataset.id);if(!p)return;p.revs=p.revs||[];const atual=p.rev||revLetra(p.revs.length);
+ openModal(`<h3>Revisões — ${esc(p.nome)}</h3><div class="doc-list"><div class="doc-r"><div class="grow"><b>Revisão ${atual} (em uso)</b><div class="muted">${p.tipo.toUpperCase()}${p.nota?' · '+esc(p.nota):''}</div></div></div>
+  ${p.revs.slice().reverse().map((r,i)=>`<div class="doc-r"><div class="grow"><b>Revisão ${esc(r.rev)}</b><div class="muted">${(r.tipo||'').toUpperCase()} · substituída em ${fdt(r.ts)} por ${esc(r.user||'—')}${r.nota?' · '+esc(r.nota):''}</div></div>${canOffice()?`<button class="btn sec sm" data-act="revBack" data-id="${p.id}" data-i="${p.revs.length-1-i}">Voltar para esta</button>`:''}</div>`).join('')}</div>
+  <div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`)};
+ACT.revBack=b=>{const p=planta(b.dataset.id),r=p?.revs[+b.dataset.i];if(!r||!confirm(`Voltar a planta para a revisão ${r.rev}? A revisão atual continua guardada no histórico.`))return;
+ const atual=p.rev||revLetra(p.revs.length);p.revs.splice(+b.dataset.i,1,{rev:atual,blobId:p.blobId,tipo:p.tipo,ts:new Date().toISOString(),user:user||'',nota:p.nota||''});
+ p.blobId=r.blobId;p.tipo=r.tipo;p.rev=r.rev;p.nota=r.nota||'';p.paginas=0;p.revAviso=true;delete docCache[p.id];logH('editou','planta',p.id,`Planta ${p.nome} voltou para a revisão ${r.rev}`);save();closeModal();render()};
+
 /* ---------- Carimbos de edição, exclusões e sincronização em equipe ---------- */
-const ENT=['obras','projetos','plantas','itens','marcas','usuarios'];
+const ENT=['obras','projetos','plantas','itens','marcas','usuarios','pend','aceites'];
 let sigs=new Map(),prevIds=new Set(),syncing=false,syncOn=false,syncT=null;
 const sigOf=x=>{const{_u,...r}=x;return JSON.stringify(r)};
 function resetSigs(){sigs=new Map();prevIds=new Set();ENT.forEach(k=>(S[k]||[]).forEach(x=>{sigs.set(x.id,sigOf(x));prevIds.add(x.id)}))}
@@ -1121,7 +1364,7 @@ ACT.syncNow=()=>syncNow(false);
 ACT.syncOff=async()=>{const d=desk();if(!d)return;await d({action:'sync-off'});syncOn=false;toast('Sincronização desligada');render()};
 ACT.bkpFolder=async()=>{const d=desk();if(!d)return;try{const r=await d({action:'backup-folder'});if(r){localStorage.setItem('orcehvac.conf.lastBkp',new Date().toISOString());toast('Backup completo salvo em: '+r);render()}}catch(e){toast('Backup: '+e.message)}};
 ACT.restFolder=async()=>{const d=desk();if(!d)return;if(!confirm('Restaurar um backup substitui os dados atuais (uma cópia dos atuais é guardada antes). Continuar?'))return;try{const r=await d({action:'restore-folder'});if(r){toast('Backup restaurado. Recarregando…');setTimeout(()=>location.reload(),900)}}catch(e){toast('Restauração: '+e.message)}};
-ACT.empSave=async()=>{const c=cfg();['empresa','cnpj','resp','crea','cliente','contato'].forEach(k=>{c[k]=($('#e_'+k)?.value||'').trim()});
+ACT.empSave=async()=>{const c=cfg();c.assinObrig=!!$('#e_assinObrig')?.checked;['empresa','cnpj','resp','crea','cliente','contato'].forEach(k=>{c[k]=($('#e_'+k)?.value||'').trim()});
  const f=$('#e_logo')?.files[0];if(f){if(!/^image\//.test(f.type))return toast('O logo precisa ser uma imagem (PNG ou JPG)');await blobSet('logo_empresa',f);urlCache.delete('logo_empresa');c.logo=true}
  save();toast('Dados da empresa salvos');render()};
 ACT.empLogoDel=async()=>{await blobDel('logo_empresa');urlCache.delete('logo_empresa');cfg().logo=false;save();render()};
@@ -1130,6 +1373,7 @@ function adminEmp(){const c=cfg();const fl=(k,l)=>`<div class="fld"><label for="
  <div class="two"><div>${fl('empresa','Empresa')}${fl('cnpj','CNPJ')}${fl('contato','Telefone / e-mail')}</div><div>${fl('resp','Responsável técnico')}${fl('crea','CREA / registro')}${fl('cliente','Cliente / responsável pelo aceite')}</div></div>
  <div class="fld"><label for="e_logo">Logo da empresa (PNG ou JPG)</label><input id="e_logo" type="file" accept="image/*"></div>
  ${c.logo?'<p class="muted">Logo já cadastrado. <button class="btn red sm" data-act="empLogoDel">Remover logo</button></p>':''}
+ <label class="chk"><input type="checkbox" id="e_assinObrig" ${c.assinObrig?'checked':''}> Exigir a assinatura do engenheiro para finalizar uma conferência</label>
  <div class="row"><button class="btn" data-act="empSave" style="flex:none">Salvar</button></div></div>`}
 
 /* ===== TRAVA DO ESCRITÓRIO (senha) — o engenheiro em campo só confere; cadastrar/editar exige senha ===== */
@@ -1170,7 +1414,7 @@ function guardMode(){if(mode==='escritorio'&&!canOffice()){mode='campo';localSto
 function askOffice(then){if(canOffice()){then();return}toast('Seu usuário é do tipo Engenheiro (campo): só confere. Peça acesso ao administrador.')}
 const newCode=()=>{const AL='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';return Array.from(rnd(10),x=>AL[x%AL.length]).join('')};
 const newSalt=()=>Array.from(rnd(8),x=>x.toString(16).padStart(2,'0')).join('');
-const LOGO='<svg viewBox="0 0 64 64" width="64" height="64"><defs><linearGradient id="lgg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f8cff"/><stop offset="1" stop-color="#0a2a52"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#lgg)"/><g fill="#fff"><path d="M32 30c-2-8 0-14 6-16 4 6 2 13-6 16z"/><path d="M34 32c8-2 14 0 16 6-6 4-13 2-16-6z"/><path d="M32 34c2 8 0 14-6 16-4-6-2-13 6-16z"/><path d="M30 32c-8 2-14 0-16-6 6-4 13-2 16 6z"/></g><circle cx="32" cy="32" r="4" fill="#0a2a52"/><circle cx="48" cy="48" r="9" fill="#16a34a"/><path d="M44 48l3 3 6-6" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const LOGO='<svg viewBox="0 0 64 64" width="64" height="64"><rect width="64" height="64" rx="14" fill="#0F222B"/><circle cx="32" cy="32" r="22" fill="none" stroke="#244552" stroke-width="2"/><g fill="#19A7C4"><path d="M32 30c-2-8 0-14 6-16 4 6 2 13-6 16z"/><path d="M34 32c8-2 14 0 16 6-6 4-13 2-16-6z"/><path d="M32 34c2 8 0 14-6 16-4-6-2-13 6-16z"/><path d="M30 32c-8 2-14 0-16-6 6-4 13-2 16 6z"/></g><circle cx="32" cy="32" r="4.2" fill="#0F222B" stroke="#E6F4F7" stroke-width="1.6"/><circle cx="48" cy="48" r="9.5" fill="#1F8A5B" stroke="#0F222B" stroke-width="2.2"/><path d="M43.8 48.2l3.1 3.1 6-6.2" stroke="#fff" stroke-width="2.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function showLogin(then){
  const c=document.getElementById('content');if(!c)return;
  const L=document.createElement('div');L.className='cf cf-login';root=L;c.replaceChildren(L);
@@ -1273,7 +1517,7 @@ function adminCad(){
  ${step(1,'Projeto','O <b>projeto</b> é a disciplina dentro da obra (ex.: “Climatização”). É nele que ficam os equipamentos e as plantas.',
   `<div class="list">${li(projs,ui.projetoId,'selP','edProj','delProj',p=>projItens(p.id).length+' item(ns)')||'<div class="muted">Nenhum projeto nesta obra.</div>'}</div><div class="stp-act"><button class="btn" data-act="addProj">+ Novo projeto</button></div>`,st(1))}
  ${step(2,'Planta','A <b>planta</b> é o desenho onde os equipamentos aparecem. Aceita <b>DXF</b> (recomendado: reconhece ambientes e equipamentos), PDF ou imagem. Envie uma por pavimento.',
-  `<div class="list">${pls.map(p=>`<div class="li"><div class="grow" data-act="posPl" data-id="${p.id}"><b>${esc(p.nome)}</b><div class="muted">${esc(p.pav||'Sem pavimento')} · ${p.tipo.toUpperCase()} · ${S.marcas.filter(m=>m.plantaId===p.id).length} ponto(s) marcado(s)</div></div><button class="btn sec sm" data-act="edPl" data-id="${p.id}" title="Editar">✎</button><button class="btn red sm" data-act="delPl" data-id="${p.id}" title="Excluir">🗑</button></div>`).join('')||'<div class="muted">Nenhuma planta enviada.</div>'}</div><div class="stp-act"><button class="btn" data-act="addPl">+ Enviar planta</button></div>`,st(2))}
+  `<div class="list">${pls.map(p=>`<div class="li"><div class="grow" data-act="posPl" data-id="${p.id}"><b>${esc(p.nome)}</b><div class="muted">${esc(p.pav||'Sem pavimento')} · ${p.tipo.toUpperCase()} · ${S.marcas.filter(m=>m.plantaId===p.id).length} ponto(s) marcado(s)</div></div><button class="btn sec sm" data-act="revPl" data-id="${p.id}" title="Enviar nova revisão da planta mantendo os pontos">⟳ Revisão</button>${(p.revs||[]).length?`<button class="btn sec sm" data-act="revList" data-id="${p.id}" title="Revisões anteriores">🕘 ${esc(p.rev||'')}</button>`:''}<button class="btn sec sm" data-act="edPl" data-id="${p.id}" title="Editar">✎</button><button class="btn red sm" data-act="delPl" data-id="${p.id}" title="Excluir">🗑</button></div>`).join('')||'<div class="muted">Nenhuma planta enviada.</div>'}</div><div class="stp-act"><button class="btn" data-act="addPl">+ Enviar planta</button></div>`,st(2))}
  ${step(3,'Equipamentos','Cadastre o que o projeto prevê: difusores, grelhas, dampers, fancoils, bombas… Você pode <b>puxar automático do desenho DXF</b>, importar uma planilha Excel ou digitar um por um.',
   `<div class="stp-stat"><b>${its.length}</b> equipamento(s) cadastrado(s)</div><div class="stp-act">${pls.some(p=>p.tipo==='dxf')?'<button class="btn" data-act="cadItens">➕ Puxar do desenho (automático)</button>':''}<button class="btn sec" data-act="nav" data-v="itens">📋 Ver lista / importar Excel / cadastrar um</button></div>`,st(3))}
  ${step(4,'Pontos na planta','Marque na planta onde cada equipamento está. Se você usou “Puxar do desenho”, <b>os pontos já foram colocados sozinhos</b>. Equipamentos que faltarem: abra a planta e use o botão “➕ Equipamento não identificado”.',
@@ -1332,8 +1576,8 @@ async function packObras(obraIds){
  const projetos=S.projetos.filter(p=>obraIds.includes(p.obraId)),pids=projetos.map(p=>p.id);
  const plantas=S.plantas.filter(p=>pids.includes(p.projetoId)),itens=S.itens.filter(i=>pids.includes(i.projetoId)),iids=new Set(itens.map(i=>i.id));
  const marcas=S.marcas.filter(m=>iids.has(m.itemId)),conf={};iids.forEach(i=>{if(S.conf[i])conf[i]=S.conf[i]});
- const bl={};for(const id of [...plantas.map(p=>p.blobId),...Object.values(conf).flatMap(c=>c.fotos)]){const b=await blobGet(id);if(b)bl[id]=await blobToDataURL(b)}
- return {formato:'conferencia-hvac',versao:1,exportado:new Date().toISOString(),obras:S.obras.filter(o=>obraIds.includes(o.id)),projetos,plantas,itens,marcas,conf,blobs:bl,hist:S.hist.filter(h=>iids.has(h.ref)||pids.includes(h.ref)||obraIds.includes(h.ref))}}
+ const bl={};for(const id of [...plantas.flatMap(p=>[p.blobId,...(p.revs||[]).map(r=>r.blobId)]),...itens.flatMap(i=>(i.docs||[]).map(d=>d.blobId)),...Object.values(conf).flatMap(c=>c.fotos)]){const b=await blobGet(id);if(b)bl[id]=await blobToDataURL(b)}
+ return {formato:'conferencia-hvac',versao:1,exportado:new Date().toISOString(),obras:S.obras.filter(o=>obraIds.includes(o.id)),projetos,plantas,itens,marcas,conf,pend:(S.pend||[]).filter(x=>iids.has(x.itemId)),aceites:(S.aceites||[]).filter(a=>pids.includes(a.projetoId)),blobs:bl,hist:S.hist.filter(h=>iids.has(h.ref)||pids.includes(h.ref)||obraIds.includes(h.ref))}}
 ACT.expObra=async()=>{const id=$('#expObra').value;if(!id)return toast('Cadastre uma obra primeiro');toast('Gerando arquivo…');const p=await packObras([id]);download(`obra_${normT(obra(id).nome)||'obra'}.json`,JSON.stringify(p),'application/json')};
 ACT.expAll=async()=>{toast('Gerando backup…');const p=await packObras(S.obras.map(o=>o.id));p.usuarios=S.usuarios;download('backup_conferencia_hvac_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(p),'application/json');localStorage.setItem('orcehvac.conf.lastBkp',new Date().toISOString());render()};
 ACT.impPkg=()=>$('#impF').click();
@@ -1345,14 +1589,14 @@ async function importPkg(p){
  const up=(arr,x)=>{const i=arr.findIndex(y=>y.id===x.id);i>=0?arr[i]=x:arr.push(x)};
  for(const [id,u] of Object.entries(p.blobs||{})){await blobSet(id,await dataURLToBlob(u));urlCache.delete(id)}
  p.obras.forEach(x=>up(S.obras,x));p.projetos.forEach(x=>up(S.projetos,x));p.plantas.forEach(x=>{up(S.plantas,x);delete docCache[x.id]});p.itens.forEach(x=>up(S.itens,x));
- p.marcas.forEach(x=>up(S.marcas,x));
+ p.marcas.forEach(x=>up(S.marcas,x));(p.pend||[]).forEach(x=>up(S.pend=S.pend||[],x));(p.aceites||[]).forEach(x=>up(S.aceites=S.aceites||[],x));
  // marcas removidas no escritório: remover marcas locais de itens importados que não vieram no pacote
  const imp=new Set(p.itens.map(i=>i.id)),keep=new Set(p.marcas.map(m=>m.id));S.marcas=S.marcas.filter(m=>!imp.has(m.itemId)||keep.has(m.id));
  for(const [id,c] of Object.entries(p.conf||{})){const l=S.conf[id];if(!l||(c.data||'')>=(l.data||''))S.conf[id]=c}
  (p.hist||[]).forEach(h=>{if(!S.hist.some(x=>x.id===h.id))S.hist.push(h)});S.hist.sort((a,b)=>b.ts.localeCompare(a.ts));
  save();if(!ui.obraId&&S.obras[0])ui.obraId='';}
 ACT.wipe=async()=>{if(!confirm('Apagar TODOS os dados deste aparelho? Faça backup antes.')||!confirm('Tem certeza? Esta ação não pode ser desfeita.'))return;
- await snapNow('antes de apagar tudo');for(const k of await blobIds())if(!String(k).startsWith('snap_'))await blobDel(k);S={obras:[],projetos:[],plantas:[],itens:[],marcas:[],usuarios:S.usuarios||[],conf:{},hist:[],cfg:{rec:S.cfg&&S.cfg.rec},del:{}};resetSigs();ui.obraId=ui.projetoId=ui.plantaId='';await kvSet('state',S);render();toast('Dados apagados')};
+ await snapNow('antes de apagar tudo');for(const k of await blobIds())if(!String(k).startsWith('snap_'))await blobDel(k);S={obras:[],projetos:[],plantas:[],itens:[],marcas:[],usuarios:S.usuarios||[],pend:[],aceites:[],conf:{},hist:[],cfg:{rec:S.cfg&&S.cfg.rec},del:{}};resetSigs();ui.obraId=ui.projetoId=ui.plantaId='';await kvSet('state',S);render();toast('Dados apagados')};
 
 /* ---------- Montagem no OrceHVAC ---------- */
 let loaded=false,pendingItem=null;
