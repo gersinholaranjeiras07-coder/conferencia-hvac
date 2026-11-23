@@ -234,3 +234,33 @@
 .cf .usr-new{display:grid;grid-template-columns:1fr 190px auto;gap:10px;align-items:end;padding-top:12px;border-top:1px solid var(--line);margin-top:6px}
 .cf .usr-row{display:flex;gap:12px;align-items:center;flex:1;min-width:0}
 @media(max-width:640px){.cf .usr-new{grid-template-columns:1fr}}
+/* ===== LOGIN ===== */
+.cf.cf-login{min-height:calc(100vh - 80px);display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(1200px 500px at 50% -10%,rgba(23,105,224,.16),transparent 70%)}
+.cf-login .lg-wrap{width:100%;max-width:520px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.cf-login .lg-card{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:34px 34px 30px;box-shadow:0 20px 60px rgba(10,42,82,.16);text-align:center}
+.cf-login .lg-logo{display:flex;justify-content:center;margin-bottom:10px}
+.cf-login h1{margin:4px 0 2px;font-size:24px;letter-spacing:-.01em}
+.cf-login .lg-sub{font-size:16px;font-weight:700;margin:14px 0 6px;color:var(--text)}
+.cf-login .lg-p{text-align:left;margin:4px 0 12px;font-size:14px}
+.cf-login .lg-foot{font-size:12px;color:var(--muted)}
+.cf-login .usr-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));margin:14px 0 4px}
+.cf-login .usr-card{padding:18px 10px}
+.cf-login .usr-av.big{width:64px;height:64px;font-size:22px}
+.cf-login .lg-who{display:flex;flex-direction:column;align-items:center;gap:4px;margin:14px 0 12px}.cf-login .lg-who b{font-size:19px}
+.cf-login .fld{text-align:left;margin-bottom:12px}
+.cf-login .lg-pw{position:relative}.cf-login .lg-pw input{width:100%;padding-right:44px}
+.cf-login .lg-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;font-size:18px;cursor:pointer;opacity:.7}
+.cf-login input[type=password],.cf-login input[type=text]{font-size:16px;padding:12px 14px}
+.cf-login .lg-keep{display:flex;gap:8px;align-items:center;justify-content:flex-start;font-size:14px;margin:4px 0 14px;cursor:pointer}
+.cf-login .lg-go{width:100%;padding:13px;font-size:16px;font-weight:700}
+.cf-login .lg-links{display:flex;justify-content:space-between;margin-top:14px;font-size:13px}
+.cf-login .lg-err{color:#dc2626;font-weight:600;min-height:22px;text-align:left;font-size:14px}
+.cf-login .lg-err.shake{animation:lgshake .35s}
+@keyframes lgshake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.cf-login .lg-ok{background:#dcfce7;color:#166534;border-radius:10px;padding:8px 12px;margin:8px 0;font-size:14px;font-weight:600}
+.cf-login .lg-code{font-size:30px;font-weight:800;letter-spacing:.14em;padding:18px;border-radius:14px;background:var(--soft);margin:8px 0 18px}
+.cf .usr-av.big{width:64px;height:64px;font-size:22px}
+.cf .acc{text-align:center}.cf .acc-btns{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.cf .usr-btn span{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}
+.cf .usr-roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:10px 0 14px}
+.cf .usr-roles>div{background:var(--soft);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;font-size:13px}

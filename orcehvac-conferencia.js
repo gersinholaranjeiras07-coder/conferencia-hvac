@@ -72,7 +72,7 @@ async function ensurePdf(){if(pdfEngine)return pdfEngine;
 class LocalBinaryDataFactory{async fetch({kind,filename}){const e=globalThis.OrcePdfResources[kind+':'+filename];if(!e)throw Error('Recurso de PDF indisponível: '+filename);return Uint8Array.from(atob(e),c=>c.charCodeAt(0))}}
 
 /* ---------- Estado ---------- */
-let S={obras:[],projetos:[],plantas:[],itens:[],marcas:[],conf:{},hist:[],cfg:{},del:{}};
+let S={obras:[],projetos:[],plantas:[],itens:[],marcas:[],usuarios:[],conf:{},hist:[],cfg:{},del:{}};
 const ui={view:'home',obraId:'',projetoId:'',disc:'',plantaId:'',pagina:1,placing:null,atab:'cad',
  fCat:'',fStatus:'',fPlanta:'',fBusca:'',pav:'',stFilter:new Set(STORDER),catFilter:'',side:true};
 let mode=localStorage.getItem('orcehvac.conf.modo')||'escritorio';
@@ -110,8 +110,8 @@ function renderTop(){
  const hasP=!!ui.projetoId,v=ui.view,off=mode==='escritorio';
  root.classList.toggle('office',off);
  $('#cfHead').innerHTML=`<div><div class="eyebrow">Obra e campo</div><h1>Comissionamento de obra</h1><p>${off?'Modo escritório: cadastre equipamentos, terminais, plantas e posicione os pontos.':'Modo campo: abra a planta, toque no ponto e registre o que foi instalado.'}</p></div>
-  <div class="cf-tools"><button class="btn sec" data-act="user" title="Trocar de usuário">${user?avatar(user,true)+' '+esc(user)+' ▾':'👤 Escolher usuário'}</button>
-  <div class="seg"><button data-act="mode" data-v="campo" class="${mode==='campo'?'on':''}">Campo</button><button data-act="mode" data-v="escritorio" class="${mode==='escritorio'?'on':''}">${hasPw()&&!off?'🔒 ':''}Escritório</button></div>${hasPw()&&off?'<button class="btn sec" data-act="lockNow" title="Bloquear o escritório">🔒 Bloquear</button>':''}</div>`;
+  <div class="cf-tools"><button class="btn sec usr-btn" data-act="user" title="Minha conta · trocar de usuário · sair">${user?avatar(user,true)+' <span>'+esc(user)+'</span> ▾':'👤 Entrar'}</button>
+  ${canOffice()?`<div class="seg"><button data-act="mode" data-v="campo" class="${mode==='campo'?'on':''}">Campo</button><button data-act="mode" data-v="escritorio" class="${mode==='escritorio'?'on':''}">Escritório</button></div>`:'<span class="chip s-em_conferencia" title="Seu acesso é só para conferir em campo">Modo campo</span>'}</div>`;
  $('#cfNav').innerHTML=`<button data-act="nav" data-v="home" class="${v==='home'||v==='plant'?'active':''}">Início</button>
   ${hasP?`<button data-act="nav" data-v="itens" class="${v==='itens'?'active':''}">Itens</button><button data-act="nav" data-v="report" class="${v==='report'?'active':''}">Relatório</button>`:''}
   ${off?`<button data-act="nav" data-v="admin" class="${v==='admin'?'active':''}">Administração</button>`:''}`;
@@ -166,40 +166,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&root&&root.isConnec
 ACT.closeModal=()=>closeModal();
 ACT.nav=b=>{ui.view=b.dataset.v;closeModal();render()};
 ACT.mode=b=>{const v=b.dataset.v,ap=()=>{mode=v;localStorage.setItem('orcehvac.conf.modo',mode);if(mode==='campo'&&ui.view==='admin')ui.view='home';ui.placing=null;render()};if(v==='escritorio')askOffice(ap);else ap()};
-const PAPEIS=['Engenheiro (campo)','Escritório'];
-const users=()=>{const c=cfg();c.users=c.users||[];return c.users};
-const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
-const UCOL=['#1769e0','#16a34a','#d97706','#9333ea','#dc2626','#0891b2','#be185d','#4d7c0f'];
-const ucolor=n=>UCOL[[...String(n)].reduce((a,c)=>a+c.charCodeAt(0),0)%UCOL.length];
-const avatar=(n,sm)=>`<span class="usr-av ${sm?'sm':''}" style="background:${ucolor(n)}">${esc(initials(n))}</span>`;
-let nameRes=null;
-function setUser(n){user=n;localStorage.setItem('orcehvac.conf.usuario',user);renderTop()}
-function askName(){return new Promise(res=>{
- if(user&&!users().some(u=>u.nome===user)){users().push({id:uid(),nome:user,papel:'Engenheiro (campo)'});save()}
- const list=users();nameRes=res;
- openModal(`<h3>👥 Quem está usando?</h3><p class="muted">${list.length?'Toque no seu nome para trocar de usuário. Tudo que você fizer fica registrado com o seu nome.':'Ainda não há usuários. Cadastre o primeiro abaixo.'}</p>
- ${list.length?`<div class="usr-grid">${list.map(u=>`<button class="usr-card ${u.nome===user?'on':''}" data-act="usrPick" data-id="${u.id}">${avatar(u.nome)}<b>${esc(u.nome)}</b><span class="muted">${esc(u.papel||'')}</span>${u.nome===user?'<span class="usr-on">em uso</span>':''}</button>`).join('')}</div>`:''}
- <div class="usr-new"><div class="fld"><label for="un_nome">${list.length?'Outra pessoa? Adicione:':'Nome'}</label><input id="un_nome" type="text" autocomplete="off" placeholder="Nome completo"></div>
-  <div class="fld"><label for="un_papel">Função</label><select id="un_papel">${PAPEIS.map(p=>`<option>${p}</option>`).join('')}</select></div><button class="btn" id="un_add">+ Adicionar e usar</button></div>
- <div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`);
- const add=()=>{const n=$('#un_nome').value.trim();if(!n)return;let u=users().find(x=>x.nome.toLowerCase()===n.toLowerCase());if(!u){u={id:uid(),nome:n,papel:$('#un_papel').value};users().push(u);logH('criou','usuario',u.id,'Cadastrou o usuário '+n);save()}
-  chooseUser(u.nome)};
- $('#un_add').onclick=add;$('#un_nome').onkeydown=e=>{if(e.key==='Enter')add()};
- modalCleanup=()=>{nameRes=null;res(!!user)}})}
-function chooseUser(n){setUser(n);const r=nameRes;nameRes=null;modalCleanup=null;closeModal();toast('Olá, '+n.split(' ')[0]+'!');if(r)r(true);if(ui.view==='admin')render()}
-ACT.usrPick=b=>{const u=users().find(x=>x.id===b.dataset.id);if(u)chooseUser(u.nome)};
-function adminUsr(){const l=users();const st=n=>{const h=S.hist.filter(x=>x.user===n);return{n:h.filter(x=>x.acao==='conferiu').length,t:h.length?h[0].ts:''}};
- return `<div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Usuários do programa</h3><button class="btn sm" data-act="usrAdd" style="flex:none">+ Novo usuário</button></div>
- <p class="muted">Cadastre quem usa o programa (escritório e engenheiros). No topo da tela, o botão com o nome permite <b>trocar de usuário com um toque</b>. O nome aparece no histórico e em cada conferência.</p>
- <div class="list">${l.map(u=>{const x=st(u.nome);return`<div class="li ${u.nome===user?'sel':''}"><div class="usr-row">${avatar(u.nome)}<div class="grow"><b>${esc(u.nome)}</b> ${u.nome===user?'<span class="usr-on">em uso</span>':''}<div class="muted">${esc(u.papel||'')} · ${x.n} conferência(s)${x.t?' · última atividade '+fdt(x.t):''}</div></div></div>
-  ${u.nome===user?'':`<button class="btn sm" data-act="usrPick" data-id="${u.id}">Usar este</button>`}<button class="btn sec sm" data-act="usrEd" data-id="${u.id}" title="Editar">✎</button><button class="btn red sm" data-act="usrDel" data-id="${u.id}" title="Remover">🗑</button></div>`}).join('')||'<div class="muted">Nenhum usuário cadastrado.</div>'}</div></div>`}
-const papelOpts=()=>PAPEIS.map(p=>({v:p,t:p}));
-ACT.usrAdd=()=>formModal('Novo usuário',[{k:'nome',l:'Nome'},{k:'papel',l:'Função',type:'select',options:papelOpts()}],v=>{if(!v.nome)return false;if(users().some(u=>u.nome.toLowerCase()===v.nome.toLowerCase())){toast('Esse usuário já existe');return false}
- const u={id:uid(),nome:v.nome,papel:v.papel||PAPEIS[0]};users().push(u);logH('criou','usuario',u.id,'Cadastrou o usuário '+u.nome);save();render()});
-ACT.usrEd=b=>{const u=users().find(x=>x.id===b.dataset.id);if(!u)return;formModal('Editar usuário',[{k:'nome',l:'Nome',value:u.nome},{k:'papel',l:'Função',type:'select',options:papelOpts(),value:u.papel}],v=>{if(!v.nome)return false;const was=u.nome===user;u.nome=v.nome;u.papel=v.papel;if(was){user=v.nome;localStorage.setItem('orcehvac.conf.usuario',user)}save();render()})};
-ACT.usrDel=b=>{const u=users().find(x=>x.id===b.dataset.id);if(!u||!confirm(`Remover o usuário "${u.nome}"? O histórico dele continua registrado.`))return;const c=cfg();c.users=c.users.filter(x=>x.id!==u.id);if(u.nome===user){user='';localStorage.removeItem('orcehvac.conf.usuario')}logH('excluiu','usuario',u.id,'Removeu o usuário '+u.nome);save();render()};
-ACT.user=()=>{askName()};
-async function needUser(){return user?true:askName()}
+async function needUser(){return !!me}
 
 /* =====================================================================
    TELA INICIAL — seleção de obra / projeto / disciplina / planta
@@ -1106,7 +1073,7 @@ ACT.csvExp=()=>{const q=v=>`"${String(v??'').replace(/"/g,'""')}"`;download('rel
    ===================================================================== */
 
 /* ---------- Carimbos de edição, exclusões e sincronização em equipe ---------- */
-const ENT=['obras','projetos','plantas','itens','marcas'];
+const ENT=['obras','projetos','plantas','itens','marcas','usuarios'];
 let sigs=new Map(),prevIds=new Set(),syncing=false,syncOn=false,syncT=null;
 const sigOf=x=>{const{_u,...r}=x;return JSON.stringify(r)};
 function resetSigs(){sigs=new Map();prevIds=new Set();ENT.forEach(k=>(S[k]||[]).forEach(x=>{sigs.set(x.id,sigOf(x));prevIds.add(x.id)}))}
@@ -1171,48 +1138,113 @@ const sha256=(()=>{let K=null,H0=null;const init=()=>{K=[];H0=[];let n=2,c=0;con
   return H.map(x=>x.toString(16).padStart(8,'0')).join('')}})();
 const hashPw=(pw,salt)=>{let h=sha256(salt+'|'+pw);for(let i=0;i<4000;i++)h=sha256(h+salt+pw);return h};
 const rnd=n=>{const a=new Uint8Array(n);crypto.getRandomValues(a);return a};
-const hasPw=()=>!!(S.cfg&&S.cfg.pw&&S.cfg.pw.h);
-const unlocked=()=>{try{return sessionStorage.getItem('orcehvac.conf.unl')==='1'}catch(e){return false}};
-const locked=()=>hasPw()&&!unlocked();
-const pwOk=(pw,k)=>{const p=cfg().pw;return !!p&&hashPw(String(pw||''),p.s)===p[k||'h']};
-function guardMode(){if(mode==='escritorio'&&locked()){mode='campo';localStorage.setItem('orcehvac.conf.modo','campo');if(ui.view==='admin')ui.view='home'}}
-function askOffice(then,msg){if(!locked()){then();return}
- openModal(`<h3>🔒 Área do escritório</h3><p class="muted">${esc(msg||'Para cadastrar ou editar é preciso a senha do escritório. Em campo, o engenheiro continua conferindo normalmente.')}</p>
- <div class="fld"><label for="pw_in">Senha</label><input id="pw_in" type="password" autocomplete="off"></div><div id="pw_err" style="color:#dc2626;font-weight:600;min-height:20px"></div>
- <div class="mfoot"><a href="#" data-act="pwForgot" style="margin-right:auto;font-size:13px">Esqueci a senha</a><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" id="pw_ok">Entrar</button></div>`);
- const go=()=>{const v=$('#pw_in').value;if(pwOk(v)){try{sessionStorage.setItem('orcehvac.conf.unl','1')}catch(e){}closeModal();then()}else{$('#pw_err').textContent='Senha incorreta.';$('#pw_in').select()}};
- $('#pw_ok').onclick=go;$('#pw_in').onkeydown=e=>{if(e.key==='Enter')go()};setTimeout(()=>$('#pw_in')?.focus(),30)}
-ACT.pwForgot=(b,e)=>{e?.preventDefault();
- openModal(`<h3>Esqueci a senha</h3><p class="muted">Digite o <b>código de recuperação</b> que apareceu quando a senha foi criada e defina uma nova senha.</p>
- <div class="fld"><label for="rc_in">Código de recuperação</label><input id="rc_in" type="text" autocomplete="off" style="text-transform:uppercase"></div>
- <div class="fld"><label for="rc_n1">Nova senha</label><input id="rc_n1" type="password" autocomplete="off"></div><div class="fld"><label for="rc_n2">Repita a nova senha</label><input id="rc_n2" type="password" autocomplete="off"></div>
- <div id="pw_err" style="color:#dc2626;font-weight:600;min-height:20px"></div><div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" id="rc_ok">Redefinir</button></div>`);
- $('#rc_ok').onclick=()=>{const c=$('#rc_in').value.trim().toUpperCase().replace(/[\s-]/g,''),a=$('#rc_n1').value,b2=$('#rc_n2').value;
-  if(!pwOk(c,'r')){$('#pw_err').textContent='Código de recuperação incorreto.';return}if(a.length<4){$('#pw_err').textContent='A senha precisa ter pelo menos 4 caracteres.';return}if(a!==b2){$('#pw_err').textContent='As senhas não conferem.';return}
-  setPw(a,true)}};
-function setPw(pw,keepRec){const c=cfg(),old=c.pw,s=Array.from(rnd(8),x=>x.toString(16).padStart(2,'0')).join('');
- const AL='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',code=Array.from(rnd(10),x=>AL[x%AL.length]).join('');
- c.pw={s,h:hashPw(pw,s),r:hashPw(code,s)};try{sessionStorage.setItem('orcehvac.conf.unl','1')}catch(e){}
- logH('editou','config','','Definiu/alterou a senha do escritório');save();
- openModal(`<h3>✅ Senha do escritório definida</h3><p>Anote o <b>código de recuperação</b> abaixo e guarde em local seguro. Ele é a única forma de redefinir a senha se você esquecer.</p>
-  <div style="font-size:28px;font-weight:800;letter-spacing:.12em;text-align:center;padding:16px;border-radius:12px;background:var(--soft);margin:10px 0">${code.slice(0,5)}-${code.slice(5)}</div>
-  <p class="muted">Ele só aparece agora. Os tablets e computadores que sincronizam com a pasta da equipe passam a usar a mesma senha.</p><div class="mfoot"><button class="btn" data-act="closeModal">Anotei</button></div>`);render()}
-ACT.lockNow=()=>{try{sessionStorage.removeItem('orcehvac.conf.unl')}catch(e){}guardMode();render()};
-ACT.pwSet=()=>{const a=$('#sg_n1').value,b=$('#sg_n2').value;if(a.length<4){toast('A senha precisa ter pelo menos 4 caracteres.');return}if(a!==b){toast('As senhas não conferem.');return}setPw(a)};
-ACT.pwChange=()=>{const o=$('#sg_o').value,a=$('#sg_n1').value,b=$('#sg_n2').value;if(!pwOk(o)){toast('Senha atual incorreta.');return}if(a.length<4){toast('A senha precisa ter pelo menos 4 caracteres.');return}if(a!==b){toast('As senhas não conferem.');return}setPw(a)};
-ACT.pwRemove=()=>{if(!pwOk($('#sg_o').value)){toast('Digite a senha atual para remover.');return}if(!confirm('Remover a senha? Qualquer pessoa poderá usar o modo Escritório.'))return;delete cfg().pw;logH('editou','config','','Removeu a senha do escritório');save();toast('Senha removida');render()};
-function adminSeg(){const on=hasPw();
- return `<div class="card"><h3>🔒 Trava do escritório</h3>
- <p class="muted">${on?'A senha está <b>ativa</b>. Em campo (tablet), o engenheiro só visualiza e confere. Para cadastrar, editar, importar ou excluir é preciso a senha.':'Defina uma senha para que o modo <b>Escritório / Administração</b> fique bloqueado. O engenheiro em campo continua conferindo, mas não consegue alterar o cadastro.'}</p>
- ${on?'<div class="fld"><label for="sg_o">Senha atual</label><input id="sg_o" type="password" autocomplete="off"></div>':''}
- <div class="two"><div class="fld"><label for="sg_n1">${on?'Nova senha':'Senha'}</label><input id="sg_n1" type="password" autocomplete="off"></div><div class="fld"><label for="sg_n2">Repita a senha</label><input id="sg_n2" type="password" autocomplete="off"></div></div>
- <div class="row">${on?'<button class="btn" data-act="pwChange" style="flex:none">Alterar senha</button><button class="btn sec" data-act="lockNow" style="flex:none">🔒 Bloquear agora</button><button class="btn red" data-act="pwRemove" style="flex:none">Remover senha</button>':'<button class="btn" data-act="pwSet" style="flex:none">Definir senha</button>'}</div>
- <p class="muted" style="margin-top:10px;font-size:12px">Esta trava evita alterações acidentais e uso por quem não é do escritório. Ela não substitui a proteção do computador ou da pasta compartilhada.</p></div>`}
+
+/* ===================================================================
+   LOGIN E ACESSOS — cada pessoa entra com a própria senha
+   Administrador: tudo + usuários · Escritório: cadastra/edita · Engenheiro (campo): só confere
+   =================================================================== */
+const ROLES=['Administrador','Escritório','Engenheiro (campo)'];
+const ROLE_HELP={'Administrador':'Acesso total e gerencia os usuários.','Escritório':'Cadastra obras, plantas e equipamentos; não gerencia usuários.','Engenheiro (campo)':'Só abre as plantas e registra a conferência. Não altera o cadastro.'};
+let me=null;
+const isAdm=()=>!!me&&me.papel==='Administrador',canOffice=()=>!!me&&(me.papel==='Administrador'||me.papel==='Escritório');
+const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+const UCOL=['#1769e0','#16a34a','#d97706','#9333ea','#dc2626','#0891b2','#be185d','#4d7c0f'];
+const ucolor=n=>UCOL[[...String(n)].reduce((a,c,i)=>a+c.charCodeAt(0)*(i+3),0)%UCOL.length];
+const avatar=(n,sm,big)=>`<span class="usr-av ${sm?'sm':''} ${big?'big':''}" style="background:${ucolor(n)}">${esc(initials(n))}</span>`;
+const sessGet=()=>{try{return sessionStorage.getItem('orcehvac.conf.sess')||localStorage.getItem('orcehvac.conf.sess')||''}catch(e){return ''}};
+const sessSet=(id,keep)=>{try{sessionStorage.setItem('orcehvac.conf.sess',id);if(keep)localStorage.setItem('orcehvac.conf.sess',id);else localStorage.removeItem('orcehvac.conf.sess')}catch(e){}};
+const sessClear=()=>{try{sessionStorage.removeItem('orcehvac.conf.sess');localStorage.removeItem('orcehvac.conf.sess')}catch(e){}};
+function loginAs(u,keep){me=u;user=u.nome;localStorage.setItem('orcehvac.conf.usuario',user);sessSet(u.id,keep);if(!canOffice()){mode='campo';localStorage.setItem('orcehvac.conf.modo','campo')}}
+function gate(then){
+ if(me){const u=S.usuarios.find(x=>x.id===me.id);if(u){me=u;return true}me=null}
+ const id=sessGet(),u=id&&S.usuarios.find(x=>x.id===id);
+ if(u){loginAs(u,!!localStorage.getItem('orcehvac.conf.sess'));return true}
+ showLogin(then);return false}
+function logout(){sessClear();me=null;user='';ui.view='home';showLogin(start)}
+function guardMode(){if(mode==='escritorio'&&!canOffice()){mode='campo';localStorage.setItem('orcehvac.conf.modo','campo');if(ui.view==='admin')ui.view='home'}}
+function askOffice(then){if(canOffice()){then();return}toast('Seu usuário é do tipo Engenheiro (campo): só confere. Peça acesso ao administrador.')}
+const newCode=()=>{const AL='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';return Array.from(rnd(10),x=>AL[x%AL.length]).join('')};
+const newSalt=()=>Array.from(rnd(8),x=>x.toString(16).padStart(2,'0')).join('');
+const LOGO='<svg viewBox="0 0 64 64" width="64" height="64"><defs><linearGradient id="lgg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f8cff"/><stop offset="1" stop-color="#0a2a52"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#lgg)"/><g fill="#fff"><path d="M32 30c-2-8 0-14 6-16 4 6 2 13-6 16z"/><path d="M34 32c8-2 14 0 16 6-6 4-13 2-16-6z"/><path d="M32 34c2 8 0 14-6 16-4-6-2-13 6-16z"/><path d="M30 32c-8 2-14 0-16-6 6-4 13-2 16 6z"/></g><circle cx="32" cy="32" r="4" fill="#0a2a52"/><circle cx="48" cy="48" r="9" fill="#16a34a"/><path d="M44 48l3 3 6-6" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function showLogin(then){
+ const c=document.getElementById('content');if(!c)return;
+ const L=document.createElement('div');L.className='cf cf-login';root=L;c.replaceChildren(L);
+ let step=S.usuarios.length?'pick':'first',sel=null,fails=0,lockUntil=0,keep=false,note='',recCode='',pendUser=null;
+ const shell=inner=>`<div class="lg-wrap"><div class="lg-card"><div class="lg-logo">${LOGO}</div><h1>Comissionamento de obra</h1>${inner}</div><div class="lg-foot">Versão ${APP_VERSION}</div></div>`;
+ const eye=id=>`<button type="button" class="lg-eye" data-eye="${id}" title="Mostrar/ocultar senha">👁</button>`;
+ const draw=()=>{let h='';
+  if(step==='pick')h=`<p class="lg-sub">Quem vai entrar?</p>${note?`<div class="lg-ok">${esc(note)}</div>`:''}<div class="usr-grid">${S.usuarios.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')).map(u=>`<button class="usr-card" data-uid="${u.id}">${avatar(u.nome,false,true)}<b>${esc(u.nome)}</b><span class="muted">${esc(u.papel)}</span></button>`).join('')}</div>`;
+  else if(step==='pw')h=`<div class="lg-who">${avatar(sel.nome,false,true)}<b>${esc(sel.nome)}</b><span class="muted">${esc(sel.papel)}</span></div>${note?`<div class="lg-ok">${esc(note)}</div>`:''}
+   <div class="fld"><label for="lg_pw">Senha</label><div class="lg-pw"><input id="lg_pw" type="password" autocomplete="current-password" autofocus>${eye('lg_pw')}</div></div><div id="lg_err" class="lg-err"></div>
+   <label class="lg-keep"><input type="checkbox" id="lg_keep" ${keep?'checked':''}> Manter conectado neste aparelho</label>
+   <button class="btn lg-go" id="lg_go">Entrar</button><div class="lg-links"><a href="#" id="lg_back">← Trocar de usuário</a><a href="#" id="lg_forgot">Esqueci minha senha</a></div>`;
+  else if(step==='first')h=`<p class="lg-sub">Primeiro acesso</p><p class="muted lg-p">Crie o usuário <b>Administrador</b>. Ele cadastra os demais usuários e define o que cada um pode fazer.</p>
+   <div class="fld"><label for="fs_n">Seu nome</label><input id="fs_n" type="text" autocomplete="name" value="${esc(user||'')}"></div>
+   <div class="fld"><label for="fs_p1">Senha (mínimo 4 caracteres)</label><div class="lg-pw"><input id="fs_p1" type="password" autocomplete="new-password">${eye('fs_p1')}</div></div>
+   <div class="fld"><label for="fs_p2">Repita a senha</label><input id="fs_p2" type="password" autocomplete="new-password"></div><div id="lg_err" class="lg-err"></div><button class="btn lg-go" id="fs_go">Criar administrador e entrar</button>`;
+  else if(step==='rec')h=`<p class="lg-sub">✅ Administrador criado</p><p class="muted lg-p">Anote o <b>código de recuperação</b>. Ele é a única forma de redefinir a senha do administrador se você esquecer. Só aparece agora.</p><div class="lg-code">${recCode.slice(0,5)}-${recCode.slice(5)}</div><button class="btn lg-go" id="rc_go">Anotei, continuar</button>`;
+  else if(step==='forgot'){h=`<div class="lg-who">${avatar(sel.nome,false,true)}<b>${esc(sel.nome)}</b></div>`+(sel.papel==='Administrador'?`<p class="muted lg-p">Digite o <b>código de recuperação</b> do administrador e defina uma nova senha.</p>
+   <div class="fld"><label for="fg_c">Código de recuperação</label><input id="fg_c" type="text" autocomplete="off" style="text-transform:uppercase"></div><div class="fld"><label for="fg_p1">Nova senha</label><input id="fg_p1" type="password" autocomplete="new-password"></div><div class="fld"><label for="fg_p2">Repita a nova senha</label><input id="fg_p2" type="password" autocomplete="new-password"></div><div id="lg_err" class="lg-err"></div><button class="btn lg-go" id="fg_go">Redefinir senha</button>`
+   :`<p class="lg-p">Peça ao <b>Administrador</b> para redefinir a sua senha em <i>Administração › Usuários e acessos › 🔑</i>.</p>`)+`<div class="lg-links"><a href="#" id="lg_back2">← Voltar</a></div>`}
+  L.innerHTML=shell(h);bind()};
+ const err=m=>{const e=L.querySelector('#lg_err');if(e){e.textContent=m;e.classList.remove('shake');void e.offsetWidth;e.classList.add('shake')}};
+ const go=u=>{loginAs(u,keep);then&&then()};
+ const bind=()=>{
+  L.querySelectorAll('[data-eye]').forEach(b=>b.onclick=()=>{const i=L.querySelector('#'+b.dataset.eye);i.type=i.type==='password'?'text':'password'});
+  L.querySelectorAll('[data-uid]').forEach(b=>b.onclick=()=>{sel=S.usuarios.find(u=>u.id===b.dataset.uid);note='';step='pw';draw()});
+  const q=id=>L.querySelector(id);
+  if(step==='pw'){const f=()=>{const now=Date.now();if(now<lockUntil)return err('Muitas tentativas. Aguarde '+Math.ceil((lockUntil-now)/1000)+' s.');
+    keep=q('#lg_keep').checked;const pw=q('#lg_pw').value;if(sel.h&&hashPw(pw,sel.s)===sel.h){go(sel);return}
+    fails++;if(fails>=5){fails=0;lockUntil=Date.now()+30000;err('Muitas tentativas. Aguarde 30 s.')}else err('Senha incorreta.');q('#lg_pw').select()};
+   q('#lg_go').onclick=f;q('#lg_pw').onkeydown=e=>{if(e.key==='Enter')f()};setTimeout(()=>q('#lg_pw')?.focus(),40);
+   q('#lg_back').onclick=e=>{e.preventDefault();step='pick';note='';draw()};q('#lg_forgot').onclick=e=>{e.preventDefault();step='forgot';draw()}}
+  if(step==='first'){const f=()=>{const n=q('#fs_n').value.trim(),a=q('#fs_p1').value,b=q('#fs_p2').value;if(!n)return err('Digite seu nome.');if(a.length<4)return err('A senha precisa ter pelo menos 4 caracteres.');if(a!==b)return err('As senhas não conferem.');
+    const salt=newSalt(),u={id:uid(),nome:n,papel:'Administrador',s:salt,h:hashPw(a,salt)};S.usuarios.push(u);recCode=newCode();S.cfg=S.cfg||{};S.cfg.rec={s:salt,h:hashPw(recCode,salt)};pendUser=u;user=n;logH('criou','usuario',u.id,'Criou o administrador '+n);save();step='rec';draw()};
+   q('#fs_go').onclick=f;q('#fs_p2').onkeydown=e=>{if(e.key==='Enter')f()};setTimeout(()=>q('#fs_n')?.focus(),40)}
+  if(step==='rec')q('#rc_go').onclick=()=>go(pendUser);
+  if(step==='forgot'){const b=q('#lg_back2');if(b)b.onclick=e=>{e.preventDefault();step='pw';draw()};const g=q('#fg_go');
+   if(g)g.onclick=()=>{const c=q('#fg_c').value.trim().toUpperCase().replace(/[\s-]/g,''),a=q('#fg_p1').value,b2=q('#fg_p2').value,r=S.cfg&&S.cfg.rec;
+    if(!r||hashPw(c,r.s)!==r.h)return err('Código de recuperação incorreto.');if(a.length<4)return err('A senha precisa ter pelo menos 4 caracteres.');if(a!==b2)return err('As senhas não conferem.');
+    const salt=newSalt();sel.s=salt;sel.h=hashPw(a,salt);S.cfg.rec={s:salt,h:hashPw(c,salt)};logH('editou','usuario',sel.id,'Redefiniu a senha de '+sel.nome+' (código de recuperação)');save();note='Senha redefinida. Entre com a nova senha.';step='pw';draw()}}};
+ draw()}
+/* conta do usuário */
+ACT.user=()=>{if(!me)return;
+ openModal(`<div class="acc">${avatar(me.nome,false,true)}<h3 style="margin:8px 0 2px">${esc(me.nome)}</h3><div class="muted">${esc(me.papel)}</div><p class="muted" style="font-size:13px">${esc(ROLE_HELP[me.papel]||'')}</p></div>
+ <div class="acc-btns"><button class="btn sec" data-act="pwMine">🔑 Alterar minha senha</button><button class="btn sec" data-act="logoutAct">🔄 Trocar de usuário</button><button class="btn red" data-act="logoutAct">⎋ Sair</button></div><div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`)};
+ACT.logoutAct=()=>{closeModal();logout()};
+ACT.pwMine=()=>{openModal(`<h3>🔑 Alterar minha senha</h3><div class="fld"><label for="pm_o">Senha atual</label><input id="pm_o" type="password" autocomplete="current-password"></div><div class="fld"><label for="pm_1">Nova senha</label><input id="pm_1" type="password" autocomplete="new-password"></div><div class="fld"><label for="pm_2">Repita a nova senha</label><input id="pm_2" type="password" autocomplete="new-password"></div><div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" id="pm_ok">Salvar</button></div>`);
+ $('#pm_ok').onclick=()=>{const o=$('#pm_o').value,a=$('#pm_1').value,b=$('#pm_2').value;if(hashPw(o,me.s)!==me.h)return toast('Senha atual incorreta.');if(a.length<4)return toast('A senha precisa ter pelo menos 4 caracteres.');if(a!==b)return toast('As senhas não conferem.');
+  me.s=newSalt();me.h=hashPw(a,me.s);logH('editou','usuario',me.id,'Alterou a própria senha');save();closeModal();toast('Senha alterada')}};
+/* administração de usuários */
+function adminUsr(){const l=S.usuarios.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));const st=n=>{const h=S.hist.filter(x=>x.user===n);return{n:h.filter(x=>x.acao==='conferiu').length,t:h.length?h[0].ts:''}};
+ return `<div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Usuários e acessos</h3><button class="btn sm" data-act="usrAdd" style="flex:none">+ Novo usuário</button></div>
+ <p class="muted">Cada pessoa entra com a <b>própria senha</b>. O nome dela fica registrado em cada conferência e alteração.</p>
+ <div class="usr-roles">${ROLES.map(r=>`<div><b>${r}</b><span class="muted">${ROLE_HELP[r]}</span></div>`).join('')}</div>
+ <div class="list">${l.map(u=>{const x=st(u.nome);return`<div class="li ${u.id===me.id?'sel':''}"><div class="usr-row">${avatar(u.nome)}<div class="grow"><b>${esc(u.nome)}</b> ${u.id===me.id?'<span class="usr-on">você</span>':''}<div class="muted">${esc(u.papel)} · ${x.n} conferência(s)${x.t?' · última atividade '+fdt(x.t):''}</div></div></div>
+  <button class="btn sec sm" data-act="usrEd" data-id="${u.id}" title="Editar nome e função">✎</button><button class="btn sec sm" data-act="usrPw" data-id="${u.id}" title="Redefinir senha">🔑</button>${u.id===me.id?'':`<button class="btn red sm" data-act="usrDel" data-id="${u.id}" title="Remover">🗑</button>`}</div>`}).join('')}</div></div>`}
+const admins=()=>S.usuarios.filter(u=>u.papel==='Administrador');
+function userForm(id){const u=id?S.usuarios.find(x=>x.id===id):null;
+ openModal(`<h3>${u?'Editar usuário':'Novo usuário'}</h3><div class="fld"><label for="uf_n">Nome</label><input id="uf_n" type="text" value="${esc(u?u.nome:'')}" autocomplete="off"></div>
+ <div class="fld"><label for="uf_p">Função</label><select id="uf_p">${ROLES.map(r=>`<option ${(u?u.papel:'Engenheiro (campo)')===r?'selected':''}>${r}</option>`).join('')}</select><div class="muted" id="uf_h" style="margin-top:4px"></div></div>
+ ${u?'':'<div class="fld"><label for="uf_1">Senha inicial (mínimo 4 caracteres)</label><input id="uf_1" type="text" autocomplete="off"></div><p class="muted" style="font-size:12px">Passe esta senha para a pessoa. Ela pode trocar depois em “Minha conta”.</p>'}
+ <div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" id="uf_ok">${u?'Salvar':'Criar usuário'}</button></div>`);
+ const hp=()=>{$('#uf_h').textContent=ROLE_HELP[$('#uf_p').value]||''};$('#uf_p').onchange=hp;hp();setTimeout(()=>$('#uf_n')?.focus(),30);
+ $('#uf_ok').onclick=()=>{const n=$('#uf_n').value.trim(),p=$('#uf_p').value;if(!n)return toast('Digite o nome');
+  if(S.usuarios.some(x=>x.id!==id&&x.nome.toLowerCase()===n.toLowerCase()))return toast('Já existe um usuário com esse nome');
+  if(u){if(u.papel==='Administrador'&&p!=='Administrador'&&admins().length<2)return toast('É preciso manter pelo menos um administrador');u.nome=n;u.papel=p;if(u.id===me.id)user=n;logH('editou','usuario',u.id,'Editou o usuário '+n)}
+  else{const a=$('#uf_1').value;if(a.length<4)return toast('A senha precisa ter pelo menos 4 caracteres');const salt=newSalt(),nu={id:uid(),nome:n,papel:p,s:salt,h:hashPw(a,salt)};S.usuarios.push(nu);logH('criou','usuario',nu.id,'Criou o usuário '+n+' ('+p+')')}
+  save();closeModal();render()}}
+ACT.usrAdd=()=>userForm();ACT.usrEd=b=>userForm(b.dataset.id);
+ACT.usrPw=b=>{const u=S.usuarios.find(x=>x.id===b.dataset.id);if(!u)return;openModal(`<h3>🔑 Redefinir senha — ${esc(u.nome)}</h3><div class="fld"><label for="rp_1">Nova senha (mínimo 4 caracteres)</label><input id="rp_1" type="text" autocomplete="off"></div><p class="muted" style="font-size:12px">Passe a nova senha para a pessoa.</p><div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" id="rp_ok">Redefinir</button></div>`);
+ setTimeout(()=>$('#rp_1')?.focus(),30);$('#rp_ok').onclick=()=>{const a=$('#rp_1').value;if(a.length<4)return toast('A senha precisa ter pelo menos 4 caracteres');u.s=newSalt();u.h=hashPw(a,u.s);logH('editou','usuario',u.id,'Redefiniu a senha de '+u.nome);save();closeModal();toast('Senha de '+u.nome+' redefinida')}};
+ACT.usrDel=b=>{const u=S.usuarios.find(x=>x.id===b.dataset.id);if(!u||u.id===me.id)return;if(u.papel==='Administrador'&&admins().length<2)return toast('É preciso manter pelo menos um administrador');
+ if(!confirm(`Remover o usuário "${u.nome}"? O histórico dele continua registrado.`))return;S.usuarios=S.usuarios.filter(x=>x.id!==u.id);logH('excluiu','usuario',u.id,'Removeu o usuário '+u.nome);save();render()};
+
 function viewAdmin(){
  const t=ui.atab;
- let h=`<div class="tabs">${[['cad','📋 Cadastro passo a passo'],['hist','🕘 Histórico'],['emp','🏢 Empresa e assinatura'],['usr','👥 Usuários'],['bkp','💾 Backup e equipe'],['seg','🔒 Senha']].map(([k,l])=>`<button data-act="atab" data-k="${k}" class="${t===k?'on':''}">${l}</button>`).join('')}</div>`;
- h+=`<p class="adm-help muted">${({cad:'Prepare a obra seguindo as etapas abaixo, de cima para baixo.',hist:'Tudo o que foi criado, editado ou conferido, com data e responsável.',emp:'Dados que aparecem no cabeçalho e na assinatura do relatório.',usr:'Quem usa o programa. Toque em “Usar este” ou no nome no topo para trocar de usuário.',bkp:'Guarde cópias de segurança e sincronize com a equipe.',seg:'Proteja o modo Escritório com senha.'})[t]||''}</p>`;
- if(t==='cad')h+=adminCad();else if(t==='hist')h+=`<div class="card"><h3>Histórico de alterações</h3><div class="hist">${histHTML(S.hist.slice(0,400))}</div></div>`;else if(t==='emp')h+=adminEmp();else if(t==='seg')h+=adminSeg();else if(t==='usr')h+=adminUsr();else h+=adminBkp();
+ let h=`<div class="tabs">${[['cad','📋 Cadastro passo a passo'],['hist','🕘 Histórico'],['emp','🏢 Empresa e assinatura'],...(isAdm()?[['usr','👥 Usuários e acessos']]:[]),['bkp','💾 Backup e equipe']].map(([k,l])=>`<button data-act="atab" data-k="${k}" class="${t===k?'on':''}">${l}</button>`).join('')}</div>`;
+ h+=`<p class="adm-help muted">${({cad:'Prepare a obra seguindo as etapas abaixo, de cima para baixo.',hist:'Tudo o que foi criado, editado ou conferido, com data e responsável.',emp:'Dados que aparecem no cabeçalho e na assinatura do relatório.',usr:'Quem pode entrar no programa e o que cada pessoa pode fazer.',bkp:'Guarde cópias de segurança e sincronize com a equipe.'})[t]||''}</p>`;
+ if(t==='cad')h+=adminCad();else if(t==='hist')h+=`<div class="card"><h3>Histórico de alterações</h3><div class="hist">${histHTML(S.hist.slice(0,400))}</div></div>`;else if(t==='emp')h+=adminEmp();else if(t==='usr'&&isAdm())h+=adminUsr();else h+=adminBkp();
  $('#cfMain').innerHTML=h;renderKpi();bindImp();
 }
 ACT.atab=b=>{ui.atab=b.dataset.k;render()};
@@ -1275,7 +1307,7 @@ ACT.snapView=async()=>{const l=await snapList();
 ACT.snapNowBtn=async()=>{await snapNow('manual');toast('Cópia criada');ACT.snapView()};
 ACT.snapRest=async b=>{if(!confirm('Voltar o cadastro para esta cópia? O estado atual é guardado antes, então dá para desfazer.'))return;
  const blob=await blobGet(b.dataset.id);if(!blob)return toast('Cópia não encontrada');const j=JSON.parse(await blob.text());await snapNow('antes de restaurar');
- S={...S,...j.state};S.cfg=S.cfg||{};S.del=S.del||{};Object.keys(docCache).forEach(k=>delete docCache[k]);resetSigs();await kvSet('state',S);closeModal();ui.obraId=ui.projetoId=ui.plantaId='';ui.view='home';render();toast('Cadastro restaurado da cópia de '+fdt(j.meta.ts))};
+ const keepU=S.usuarios,keepR=S.cfg&&S.cfg.rec;S={...S,...j.state};S.usuarios=keepU;S.cfg=S.cfg||{};if(keepR)S.cfg.rec=keepR;S.del=S.del||{};Object.keys(docCache).forEach(k=>delete docCache[k]);resetSigs();await kvSet('state',S);closeModal();ui.obraId=ui.projetoId=ui.plantaId='';ui.view='home';render();toast('Cadastro restaurado da cópia de '+fdt(j.meta.ts))};
 function adminBkp(){
  const dk=!!desk(),lb=localStorage.getItem('orcehvac.conf.lastBkp'),ls=localStorage.getItem('orcehvac.conf.lastSync');
  return (dk?`<div class="card"><h3>Backup completo (dados, plantas e fotos)</h3><p>Copia tudo para uma pasta de sua escolha (pendrive, OneDrive, rede). Último backup: <b>${lb?fdt(lb):'nunca feito'}</b>.</p><div class="row"><button class="btn" data-act="bkpFolder" style="flex:none">💾 Fazer backup completo</button><button class="btn sec" data-act="restFolder" style="flex:none">Restaurar de um backup…</button></div></div>
@@ -1293,12 +1325,13 @@ async function packObras(obraIds){
  const bl={};for(const id of [...plantas.map(p=>p.blobId),...Object.values(conf).flatMap(c=>c.fotos)]){const b=await blobGet(id);if(b)bl[id]=await blobToDataURL(b)}
  return {formato:'conferencia-hvac',versao:1,exportado:new Date().toISOString(),obras:S.obras.filter(o=>obraIds.includes(o.id)),projetos,plantas,itens,marcas,conf,blobs:bl,hist:S.hist.filter(h=>iids.has(h.ref)||pids.includes(h.ref)||obraIds.includes(h.ref))}}
 ACT.expObra=async()=>{const id=$('#expObra').value;if(!id)return toast('Cadastre uma obra primeiro');toast('Gerando arquivo…');const p=await packObras([id]);download(`obra_${normT(obra(id).nome)||'obra'}.json`,JSON.stringify(p),'application/json')};
-ACT.expAll=async()=>{toast('Gerando backup…');const p=await packObras(S.obras.map(o=>o.id));download('backup_conferencia_hvac_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(p),'application/json');localStorage.setItem('orcehvac.conf.lastBkp',new Date().toISOString());render()};
+ACT.expAll=async()=>{toast('Gerando backup…');const p=await packObras(S.obras.map(o=>o.id));p.usuarios=S.usuarios;download('backup_conferencia_hvac_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(p),'application/json');localStorage.setItem('orcehvac.conf.lastBkp',new Date().toISOString());render()};
 ACT.impPkg=()=>$('#impF').click();
 function bindImp(){const f=$('#impF');if(!f)return;f.onchange=async()=>{const file=f.files[0];if(!file)return;try{await importPkg(JSON.parse(await file.text()));render();toast('Arquivo importado')}catch(e){toast('Arquivo inválido: '+e.message)}f.value=''}}
 async function importPkg(p){
  if(p.formato!=='conferencia-hvac')throw new Error('não é um arquivo do sistema');
  await snapNow('antes de importar arquivo');
+ if(p.usuarios&&!S.usuarios.length)S.usuarios=p.usuarios;
  const up=(arr,x)=>{const i=arr.findIndex(y=>y.id===x.id);i>=0?arr[i]=x:arr.push(x)};
  for(const [id,u] of Object.entries(p.blobs||{})){await blobSet(id,await dataURLToBlob(u));urlCache.delete(id)}
  p.obras.forEach(x=>up(S.obras,x));p.projetos.forEach(x=>up(S.projetos,x));p.plantas.forEach(x=>{up(S.plantas,x);delete docCache[x.id]});p.itens.forEach(x=>up(S.itens,x));
@@ -1309,11 +1342,11 @@ async function importPkg(p){
  (p.hist||[]).forEach(h=>{if(!S.hist.some(x=>x.id===h.id))S.hist.push(h)});S.hist.sort((a,b)=>b.ts.localeCompare(a.ts));
  save();if(!ui.obraId&&S.obras[0])ui.obraId='';}
 ACT.wipe=async()=>{if(!confirm('Apagar TODOS os dados deste aparelho? Faça backup antes.')||!confirm('Tem certeza? Esta ação não pode ser desfeita.'))return;
- await snapNow('antes de apagar tudo');for(const k of await blobIds())if(!String(k).startsWith('snap_'))await blobDel(k);S={obras:[],projetos:[],plantas:[],itens:[],marcas:[],conf:{},hist:[],cfg:{},del:{}};resetSigs();ui.obraId=ui.projetoId=ui.plantaId='';await kvSet('state',S);render();toast('Dados apagados')};
+ await snapNow('antes de apagar tudo');for(const k of await blobIds())if(!String(k).startsWith('snap_'))await blobDel(k);S={obras:[],projetos:[],plantas:[],itens:[],marcas:[],usuarios:S.usuarios||[],conf:{},hist:[],cfg:{rec:S.cfg&&S.cfg.rec},del:{}};resetSigs();ui.obraId=ui.projetoId=ui.plantaId='';await kvSet('state',S);render();toast('Dados apagados')};
 
 /* ---------- Montagem no OrceHVAC ---------- */
 let loaded=false,pendingItem=null;
-async function ensureLoaded(){if(loaded)return true;try{const saved=await kvGet();if(saved)S={...S,...saved};S.cfg=S.cfg||{};S.del=S.del||{};resetSigs();loaded=true;initSync();return true}catch(e){toast('Não foi possível ler os dados do comissionamento: '+e.message);return false}}
+async function ensureLoaded(){if(loaded)return true;try{const saved=await kvGet();if(saved)S={...S,...saved};S.cfg=S.cfg||{};S.del=S.del||{};S.usuarios=S.usuarios||[];resetSigs();loaded=true;initSync();return true}catch(e){toast('Não foi possível ler os dados do comissionamento: '+e.message);return false}}
 function mount(){
  const c=document.getElementById('content');root=document.createElement('div');root.className='cf';
  root.innerHTML='<section class="heading" id="cfHead"></section><nav class="module-tabs" id="cfNav"></nav><div id="cfKpi"></div><div id="cfMain"></div><div id="cfModal"></div>';
@@ -1321,6 +1354,7 @@ function mount(){
 }
 async function start(){
  if(!await ensureLoaded())return;
+ if(!gate(start))return;
  mount();render();
  if(pendingItem){const id=pendingItem;pendingItem=null;if(item(id))openConf(id)}
 }
@@ -1328,6 +1362,7 @@ async function start(){
 function bkpWarn(){if(!S.obras.length)return '';const lb=localStorage.getItem('orcehvac.conf.lastBkp');const days=lb?(Date.now()-new Date(lb))/864e5:999;if(days<7||syncOn)return '';return `<div class="panel" style="margin-bottom:16px;border-left:4px solid #dc2626;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span><b>Faça um backup.</b> ${lb?'O último foi há '+Math.floor(days)+' dia(s).':'Nenhum backup em arquivo foi feito ainda.'} Guarde o arquivo no WhatsApp, e-mail ou pendrive.</span><button class="btn sm" data-ov="${desk()?'bkp':'bkpdl'}" style="margin-left:auto">${desk()?'Abrir backup':'⬇ Baixar backup agora'}</button></div>`}
 async function overview(){
  if(!await ensureLoaded())return;
+ if(!gate(overview))return;
  const c=document.getElementById('content');
  const ov=document.createElement('div');ov.className='cf cf-ov';root=ov;
  const sel=ui.ovObra&&obra(ui.ovObra)?ui.ovObra:'';ui.ovObra=sel;
