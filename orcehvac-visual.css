@@ -361,3 +361,45 @@ body:has(.cf-login) .content{padding:0;max-width:none}
 #cfLab .lab-t b{font:700 17px/1.1 var(--f-cond,system-ui);overflow-wrap:anywhere}
 @media print{body.cf-labp>*:not(#cfLab){display:none!important}#cfLab{position:static;overflow:visible;padding:0}#cfLab .lab-bar{display:none}#cfLab .lab-grid{grid-template-columns:repeat(3,1fr)}}
 .cf .two .fld input,.cf .two .fld select{width:100%;box-sizing:border-box}
+
+/* ---------- v0.9: hierarquia, checklist, cronograma, desenho, voz ---------- */
+.cf .hier{margin:-4px 0 10px;font-size:13px;color:#3F535B}
+.cf .doc-r.click{cursor:pointer}.cf .doc-r.click:hover{background:#F3F6F5}
+.cf .mic{margin-left:8px}.cf .mic.rec{background:#C0392B;color:#fff;border-color:#C0392B}
+.cf .chk-sec{margin-top:6px}
+.cf .chk-t{width:100%;border-collapse:collapse}
+.cf .chk-t td{padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+.cf .chk-t tr.r-ok td:first-child{border-left:3px solid #16A34A}.cf .chk-t tr.r-nok td:first-child{border-left:3px solid #DC2626}.cf .chk-t tr.r-vz td:first-child{border-left:3px solid #E7B80C}
+.cf .chk-b{text-align:right;white-space:nowrap}
+.cf .chk-b button{min-width:56px;padding:7px 10px;margin-left:4px;border:1px solid var(--line);border-radius:5px;background:#fff;font:600 13px var(--f-txt);cursor:pointer}
+.cf .chk-b button.on.ok{background:#16A34A;border-color:#16A34A;color:#fff}.cf .chk-b button.on.nok{background:#DC2626;border-color:#DC2626;color:#fff}.cf .chk-b button.on.na{background:#5B6B72;border-color:#5B6B72;color:#fff}
+.cf .chk-b input{width:96px;padding:7px 8px;border:1px solid var(--line);border-radius:5px;text-align:right}
+.cf .chk-b input.ok{border-color:#16A34A;background:#EAF7EE}.cf .chk-b input.nok{border-color:#DC2626;background:#FDECEC}
+.cf .chk-adm{width:100%;border-collapse:collapse;margin-top:6px}.cf .chk-adm th{text-align:left;font-size:12px;color:#5B6B72;padding:8px;border-bottom:1px solid var(--line)}.cf .chk-adm td{padding:8px;border-bottom:1px solid var(--line)}
+.cf .cr{position:relative;padding-top:18px}
+.cf .cr-row{display:flex;align-items:center;gap:10px;margin:6px 0}
+.cf .cr-l{width:150px;flex:none;display:flex;flex-direction:column;font-size:13px;line-height:1.2}
+.cf .cr-t{position:relative;flex:1;height:22px;background:#F1F4F3;border-radius:4px}
+.cf .cr-b{position:absolute;top:2px;height:18px;border-radius:4px;background:#C9D8DD;overflow:hidden;min-width:6px}
+.cf .cr-b i{position:absolute;left:0;top:0;bottom:0;background:#0E6A88}.cf .cr-b.late{background:#F3C4BF}.cf .cr-b.late i{background:#C0392B}
+.cf .cr-b em{position:absolute;right:4px;top:0;font:700 11px/18px var(--f-cond);font-style:normal;color:#0F222B}
+.cf .cr-hoje{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed #C0392B;z-index:2;pointer-events:none}.cf .cr-hoje span{position:absolute;top:-2px;left:4px;font-size:11px;color:#C0392B;font-weight:700}
+.cf .cr{margin-left:160px}.cf .cr .cr-row{margin-left:-160px}.cf .cr .cr-row .cr-t{margin-left:0}
+.cf .ph{position:relative}.cf .ph .mkb{position:absolute;left:4px;top:4px;width:30px;height:30px;border-radius:50%;border:0;background:rgba(15,34,43,.85);color:#fff;cursor:pointer;font-size:14px}
+.mk-ov{position:fixed;inset:0;z-index:400;background:rgba(5,15,20,.82);display:flex;align-items:center;justify-content:center;padding:10px}
+.mk-box{display:flex;flex-direction:column;background:#fff;border-radius:10px;max-width:100%;max-height:100%;overflow:hidden}
+.mk-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:8px 10px;border-bottom:1px solid #ddd}
+.mk-bar button{padding:8px 11px;border:1px solid #cfd8dc;border-radius:5px;background:#fff;font:600 13px system-ui;cursor:pointer}
+.mk-bar button.on{background:#0F222B;color:#fff;border-color:#0F222B}.mk-bar .ok{background:#16A34A;color:#fff;border-color:#16A34A}
+.mk-cols{display:inline-flex;gap:6px}.mk-cols button{width:28px;height:28px;padding:0;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #9aa}.mk-cols button.on{box-shadow:0 0 0 3px #0F222B}
+.mk-act{margin-left:auto;display:inline-flex;gap:6px}
+.mk-cv{overflow:auto;padding:8px;background:#222;display:flex;justify-content:center}.mk-cv canvas{max-width:100%;max-height:calc(100vh - 110px);touch-action:none;cursor:crosshair;background:#fff}
+.cf #drw{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:2;overflow:visible}.cf #mks{z-index:3}
+.cf .pvbody{position:relative}
+.cf .drwbar{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:12;display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:92%;background:#0F222B;padding:7px 9px;border-radius:9px;box-shadow:0 8px 24px rgba(5,15,20,.4)}
+.cf .drwbar>button{padding:9px 12px;border:0;border-radius:5px;background:rgba(255,255,255,.12);color:#fff;font:600 13px var(--f-txt);cursor:pointer}
+.cf .drwbar>button.on{background:#0E6A88}.cf .drwbar>button.ok{background:#16A34A}
+.cf .drwbar .mk-cols button{width:26px;height:26px;border:2px solid #0F222B;box-shadow:0 0 0 1px rgba(255,255,255,.5)}.cf .drwbar .mk-cols button.on{box-shadow:0 0 0 3px #fff}
+.cf #vp.drawing{cursor:crosshair;touch-action:none}
+.cf .tbl-pend th,.cf .tbl-pend td{padding:10px 8px}.cf .tbl-pend td .btn.sm{padding:6px 10px}
+.cf .pr.chk-sec,.cf .pr:has(.sigpad),.cf .pr:has(.photos){grid-column:1/-1}
