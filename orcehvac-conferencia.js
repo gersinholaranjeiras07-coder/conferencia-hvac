@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.9.0';
+const APP_VERSION='0.9.1';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -1479,15 +1479,32 @@ function chkHTML(chk,it){if(!chk||!chk.linhas.length)return '';
 function adminChk(){
  const cat=ui.chkCat&&CATS[ui.chkCat]?ui.chkCat:'fancoil',mod=modeloDe(cat);
  const sel=`<div class="fld"><label>Tipo de equipamento</label><select data-chg="chkCat">${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${k===cat?'selected':''}>${c.l}${modeloDe(k)?' ✔':''}</option>`).join('')}</select></div>`;
- return `<div class="card"><h3>Modelos de checklist</h3><p class="muted">Defina, para cada tipo de equipamento, as verificações e medições que o engenheiro deve registrar na conferência (ex.: “fixação adequada”, “corrente medida”). Linhas <b>Não</b> ou medição fora da tolerância deixam o item <b>divergente</b> e abrem pendência.</p>${sel}
+ return `<div class="card"><h3>Modelos de checklist</h3><div class="usr-tab" style="margin-bottom:12px"><b>⚡ Começar rápido</b><p class="muted" style="margin:4px 0 8px">Cria de uma vez um modelo sugerido de HVAC para cada tipo que ainda não tem (bomba, chiller, fancoil, fancolete, difusor, grelha e damper). Depois ajuste ou apague o que não servir. <b>Para os tablets:</b> clique em <b>Gerar arquivo para o tablet</b> e envie o <code>modelos.json</code> ao GitHub, junto do <code>usuarios.json</code>; os engenheiros recebem o checklist sozinhos.</p><div class="row"><button class="btn" data-act="chkAllSug" style="flex:none">Criar modelos sugeridos para todos os tipos</button><button class="btn sec" data-act="chkExport" style="flex:none">⬇ Gerar arquivo para o tablet</button></div></div>
+ <p class="muted">Defina, para cada tipo de equipamento, as verificações e medições que o engenheiro deve registrar na conferência (ex.: “fixação adequada”, “corrente medida”). Linhas <b>Não</b> ou medição fora da tolerância deixam o item <b>divergente</b> e abrem pendência.</p>${sel}
  ${mod?`<table class="chk-adm"><thead><tr><th></th><th>Verificação / medição</th><th>Tipo</th><th>Compara com</th><th></th></tr></thead><tbody>${mod.linhas.map((l,i)=>`<tr><td class="muted">${i+1}</td><td>${esc(l.t)}</td><td>${l.tipo==='sn'?'Sim / Não':'Medida'+(l.un?' ('+esc(l.un)+')':'')}</td><td>${l.tipo==='sn'?'—':l.ref?'Projeto: '+esc(F[l.ref].l)+(TOLS[l.ref]?' (+'+Math.round(TOLS[l.ref]*100)+'%)':''):(l.esp?esc(l.esp)+' ±'+(+l.tol||5)+'%':'sem comparação')}</td><td style="white-space:nowrap"><button class="btn sec sm" data-act="chkUp" data-i="${i}">↑</button> <button class="btn sec sm" data-act="chkDn" data-i="${i}">↓</button> <button class="btn sec sm" data-act="chkEdit" data-i="${i}">✎</button> <button class="btn red sm" data-act="chkDel" data-i="${i}">🗑</button></td></tr>`).join('')||'<tr><td colspan="5" class="muted">Modelo sem linhas.</td></tr>'}</tbody></table>
  <div class="row" style="margin-top:10px"><button class="btn" data-act="chkAdd" style="flex:none">+ Nova linha</button><button class="btn red" data-act="chkDelModel" style="flex:none">Excluir modelo</button></div>`
  :`<p class="muted">Ainda não há modelo para <b>${CATS[cat].l}</b>.</p><div class="row"><button class="btn" data-act="chkNew" data-v="sug" style="flex:none">Criar modelo sugerido</button><button class="btn sec" data-act="chkNew" data-v="vazio" style="flex:none">Criar em branco</button></div>`}</div>`}
 CHG.chkCat=b=>{ui.chkCat=b.value;render()};
-ACT.chkNew=b=>{const cat=ui.chkCat||'fancoil',L=[];let n=0;const sn=t=>L.push({id:'l'+(++n)+uid().slice(0,3),t,tipo:'sn'}),nu=(t,ref,un)=>L.push({id:'l'+(++n)+uid().slice(0,3),t,tipo:'num',un,ref,esp:'',tol:5});
- if(b.dataset.v==='sug'){sn('Instalado conforme o projeto');sn('Fixação e suportes adequados');sn('TAG de identificação afixada');sn('Acesso para manutenção livre');
-  const c=CATS[cat].conf;if(c.includes('vazao'))nu('Vazão medida','vazao','m³/h');if(c.includes('vazaoagua'))nu('Vazão de água medida','vazaoagua','m³/h');if(c.includes('corrente'))nu('Corrente medida','corrente','A');if(c.includes('tensaoeq'))nu('Tensão medida','tensaoeq','V')}
- S.modelos=S.modelos||[];S.modelos.push({id:uid(),cat,nome:'Verificação — '+CATS[cat].l,linhas:L});logH('criou','modelo',cat,'Criou modelo de checklist de '+CATS[cat].l);save();render()};
+function sugLinhas(cat){const L=[];let n=0;const id=()=>'l'+(++n)+uid().slice(0,3),sn=t=>L.push({id:id(),t,tipo:'sn'}),nu=(t,ref,un)=>L.push({id:id(),t,tipo:'num',un,ref,esp:'',tol:5}),c=CATS[cat].conf;
+ sn('Instalado conforme o projeto');sn('TAG de identificação afixada');
+ if(cat==='bomba'){sn('Base nivelada e fixação adequada');sn('Sentido de rotação correto');sn('Sem vazamento no selo / conexões');sn('Sem vibração ou ruído anormal');sn('Válvulas de bloqueio e retenção instaladas');sn('Manômetros instalados');sn('Acesso para manutenção livre')}
+ else if(cat==='chiller'){sn('Base e amortecedores adequados');sn('Isolamento térmico das tubulações íntegro');sn('Fluxostato e intertravamentos funcionando');sn('Sem vazamento de água ou gás');sn('Sem vibração ou ruído anormal');sn('Acesso para manutenção livre')}
+ else if(cat==='fancoil'||cat==='fancolete'){sn('Fixação e suportes adequados');sn('Dreno conectado e escoando');sn('Bandeja limpa e sem vazamento');sn('Filtro instalado');sn('Válvula de água e atuador instalados');sn('Isolamento térmico das tubulações íntegro');sn('Acesso para manutenção livre')}
+ else if(cat==='difusor'){sn('Fixação e acabamento adequados');sn('Sem vazamento de ar ao redor');sn('Damper de regulagem instalado')}
+ else if(cat==='grelha'){sn('Fixação e acabamento adequados');sn('Sem vazamento de ar ao redor')}
+ else if(cat==='damper'){sn('Instalado no sentido e posição corretos');sn('Atuador funcionando (abre e fecha)');sn('Sem obstrução das lâminas');sn('Indicação de posição visível');sn('Acesso para inspeção');if(/damper/i.test(CATS[cat].l))sn('Elo fusível / dispositivo de segurança no lugar (se corta-fogo)')}
+ if(c.includes('vazao'))nu('Vazão medida','vazao','m³/h');if(c.includes('vazaoagua'))nu('Vazão de água medida','vazaoagua','m³/h');if(c.includes('pressao'))nu('Pressão medida','pressao','');if(c.includes('corrente'))nu('Corrente medida','corrente','A');if(c.includes('tensaoeq'))nu('Tensão medida','tensaoeq','V');
+ return L}
+ACT.chkNew=b=>{const cat=ui.chkCat||'fancoil';S.modelos=S.modelos||[];S.modelos.push({id:uid(),cat,nome:'Verificação — '+CATS[cat].l,linhas:b.dataset.v==='sug'?sugLinhas(cat):[]});logH('criou','modelo',cat,'Criou modelo de checklist de '+CATS[cat].l);save();render()};
+ACT.chkAllSug=()=>{S.modelos=S.modelos||[];let n=0;Object.keys(CATS).forEach(cat=>{if(!modeloDe(cat)){S.modelos.push({id:uid(),cat,nome:'Verificação — '+CATS[cat].l,linhas:sugLinhas(cat)});n++}});if(!n)return toast('Todos os tipos já têm modelo');logH('criou','modelo','todos','Criou '+n+' modelo(s) de checklist sugeridos');save();render();toast(n+' modelo(s) criado(s). Ajuste o que quiser em cada tipo.')};
+ACT.chkExport=()=>{if(!(S.modelos||[]).length)return toast('Crie os modelos primeiro');download('modelos.json',JSON.stringify({v:1,gerado:new Date().toISOString(),modelos:S.modelos.map(({arq,...m})=>m)},null,1),'application/json');toast('Arquivo gerado ('+S.modelos.length+' modelo(s)). Envie para o GitHub, na pasta do site, junto do usuarios.json.')};
+async function loadModelFile(){if(desk()||!/^https?:/.test(location.protocol))return;
+ try{const r=await fetch('modelos.json?'+Date.now(),{cache:'no-store'});if(!r.ok)return;const j=await r.json();if(!j||!Array.isArray(j.modelos))return;
+  S.modelos=S.modelos||[];const ids=new Set(j.modelos.map(m=>m.id));let ch=0;
+  for(const m of j.modelos){if(!m.id||!m.cat||!Array.isArray(m.linhas))continue;const n={...m,arq:true},i=S.modelos.findIndex(x=>x.id===m.id);
+   if(i<0){S.modelos.push(n);ch++}else if(JSON.stringify({...S.modelos[i],_u:0})!==JSON.stringify({...n,_u:0})){S.modelos[i]=n;ch++}}
+  const n0=S.modelos.length;S.modelos=S.modelos.filter(m=>!m.arq||ids.has(m.id));ch+=n0-S.modelos.length;
+  if(ch){resetSigs();await kvSet('state',S)}}catch{}}
 function chkLinhaForm(i){const cat=ui.chkCat,mod=modeloDe(cat),l=i>=0?mod.linhas[i]:{};
  const refs=[{v:'',t:'— nenhum —'},...Object.keys(F).filter(k=>F[k].num&&CATS[cat].proj.includes(k)).map(k=>({v:k,t:F[k].l+(TOLS[k]?' (+'+Math.round(TOLS[k]*100)+'%)':'')}))];
  formModal(i>=0?'Editar linha':'Nova linha',[{k:'t',l:'Verificação ou medição',value:l.t||''},{k:'tipo',l:'Tipo de resposta',type:'select',value:l.tipo||'sn',options:[{v:'sn',t:'Sim / Não'},{v:'num',t:'Medida (valor)'}]},{k:'un',l:'Unidade (medidas)',value:l.un||''},{k:'ref',l:'Comparar com o campo do projeto (medidas)',type:'select',value:l.ref||'',options:refs},{k:'esp',l:'…ou valor esperado fixo (medidas)',value:l.esp||''},{k:'tol',l:'Tolerância ± % (valor fixo)',value:String(l.tol||5)}],v=>{
@@ -1812,7 +1829,7 @@ async function loadUserFile(){if(desk()||!/^https?:/.test(location.protocol))ret
    if(i<0){S.usuarios.push(n);ch++}else if(S.usuarios[i].arq&&JSON.stringify(S.usuarios[i])!==JSON.stringify(n)){S.usuarios[i]=n;ch++}}
   const n0=S.usuarios.length;S.usuarios=S.usuarios.filter(u=>!u.arq||ids.has(u.id));ch+=n0-S.usuarios.length;
   if(ch){resetSigs();await kvSet('state',S)}}catch{}}
-async function ensureLoaded(){if(loaded)return true;try{const saved=await kvGet();if(saved)S={...S,...saved};S.cfg=S.cfg||{};S.del=S.del||{};S.usuarios=S.usuarios||[];resetSigs();loaded=true;await loadUserFile();initSync();return true}catch(e){toast('Não foi possível ler os dados do comissionamento: '+e.message);return false}}
+async function ensureLoaded(){if(loaded)return true;try{const saved=await kvGet();if(saved)S={...S,...saved};S.cfg=S.cfg||{};S.del=S.del||{};S.usuarios=S.usuarios||[];resetSigs();loaded=true;await loadUserFile();await loadModelFile();initSync();return true}catch(e){toast('Não foi possível ler os dados do comissionamento: '+e.message);return false}}
 function mount(){
  const c=document.getElementById('content');root=document.createElement('div');root.className='cf';
  root.innerHTML='<section class="heading" id="cfHead"></section><nav class="module-tabs" id="cfNav"></nav><div id="cfKpi"></div><div id="cfMain"></div><div id="cfModal"></div>';
