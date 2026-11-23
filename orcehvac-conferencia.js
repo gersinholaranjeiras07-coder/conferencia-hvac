@@ -110,7 +110,7 @@ function renderTop(){
  const hasP=!!ui.projetoId,v=ui.view,off=mode==='escritorio';
  root.classList.toggle('office',off);
  $('#cfHead').innerHTML=`<div><div class="eyebrow">Obra e campo</div><h1>Comissionamento de obra</h1><p>${off?'Modo escritório: cadastre equipamentos, terminais, plantas e posicione os pontos.':'Modo campo: abra a planta, toque no ponto e registre o que foi instalado.'}</p></div>
-  <div class="cf-tools"><button class="btn sec" data-act="user" title="Responsável pela conferência">👤 ${esc(user||'Definir nome')}</button>
+  <div class="cf-tools"><button class="btn sec" data-act="user" title="Trocar de usuário">${user?avatar(user,true)+' '+esc(user)+' ▾':'👤 Escolher usuário'}</button>
   <div class="seg"><button data-act="mode" data-v="campo" class="${mode==='campo'?'on':''}">Campo</button><button data-act="mode" data-v="escritorio" class="${mode==='escritorio'?'on':''}">${hasPw()&&!off?'🔒 ':''}Escritório</button></div>${hasPw()&&off?'<button class="btn sec" data-act="lockNow" title="Bloquear o escritório">🔒 Bloquear</button>':''}</div>`;
  $('#cfNav').innerHTML=`<button data-act="nav" data-v="home" class="${v==='home'||v==='plant'?'active':''}">Início</button>
   ${hasP?`<button data-act="nav" data-v="itens" class="${v==='itens'?'active':''}">Itens</button><button data-act="nav" data-v="report" class="${v==='report'?'active':''}">Relatório</button>`:''}
@@ -166,11 +166,38 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&root&&root.isConnec
 ACT.closeModal=()=>closeModal();
 ACT.nav=b=>{ui.view=b.dataset.v;closeModal();render()};
 ACT.mode=b=>{const v=b.dataset.v,ap=()=>{mode=v;localStorage.setItem('orcehvac.conf.modo',mode);if(mode==='campo'&&ui.view==='admin')ui.view='home';ui.placing=null;render()};if(v==='escritorio')askOffice(ap);else ap()};
+const PAPEIS=['Engenheiro (campo)','Escritório'];
+const users=()=>{const c=cfg();c.users=c.users||[];return c.users};
+const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+const UCOL=['#1769e0','#16a34a','#d97706','#9333ea','#dc2626','#0891b2','#be185d','#4d7c0f'];
+const ucolor=n=>UCOL[[...String(n)].reduce((a,c)=>a+c.charCodeAt(0),0)%UCOL.length];
+const avatar=(n,sm)=>`<span class="usr-av ${sm?'sm':''}" style="background:${ucolor(n)}">${esc(initials(n))}</span>`;
+let nameRes=null;
+function setUser(n){user=n;localStorage.setItem('orcehvac.conf.usuario',user);renderTop()}
 function askName(){return new Promise(res=>{
- openModal(`<h3>Responsável pela conferência</h3><div class="fld"><label for="f_nome">Seu nome</label><input id="f_nome" type="text" value="${esc(user)}" autocomplete="off"></div><div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" id="nmOk">Salvar</button></div>`);
- setTimeout(()=>$('#f_nome')?.focus(),30);
- const ok=()=>{const n=$('#f_nome').value.trim();if(!n)return;user=n;localStorage.setItem('orcehvac.conf.usuario',user);modalCleanup=null;closeModal();renderTop();res(true)};
- $('#nmOk').onclick=ok;$('#f_nome').onkeydown=e=>{if(e.key==='Enter')ok()};modalCleanup=()=>res(false)})}
+ if(user&&!users().some(u=>u.nome===user)){users().push({id:uid(),nome:user,papel:'Engenheiro (campo)'});save()}
+ const list=users();nameRes=res;
+ openModal(`<h3>👥 Quem está usando?</h3><p class="muted">${list.length?'Toque no seu nome para trocar de usuário. Tudo que você fizer fica registrado com o seu nome.':'Ainda não há usuários. Cadastre o primeiro abaixo.'}</p>
+ ${list.length?`<div class="usr-grid">${list.map(u=>`<button class="usr-card ${u.nome===user?'on':''}" data-act="usrPick" data-id="${u.id}">${avatar(u.nome)}<b>${esc(u.nome)}</b><span class="muted">${esc(u.papel||'')}</span>${u.nome===user?'<span class="usr-on">em uso</span>':''}</button>`).join('')}</div>`:''}
+ <div class="usr-new"><div class="fld"><label for="un_nome">${list.length?'Outra pessoa? Adicione:':'Nome'}</label><input id="un_nome" type="text" autocomplete="off" placeholder="Nome completo"></div>
+  <div class="fld"><label for="un_papel">Função</label><select id="un_papel">${PAPEIS.map(p=>`<option>${p}</option>`).join('')}</select></div><button class="btn" id="un_add">+ Adicionar e usar</button></div>
+ <div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`);
+ const add=()=>{const n=$('#un_nome').value.trim();if(!n)return;let u=users().find(x=>x.nome.toLowerCase()===n.toLowerCase());if(!u){u={id:uid(),nome:n,papel:$('#un_papel').value};users().push(u);logH('criou','usuario',u.id,'Cadastrou o usuário '+n);save()}
+  chooseUser(u.nome)};
+ $('#un_add').onclick=add;$('#un_nome').onkeydown=e=>{if(e.key==='Enter')add()};
+ modalCleanup=()=>{nameRes=null;res(!!user)}})}
+function chooseUser(n){setUser(n);const r=nameRes;nameRes=null;modalCleanup=null;closeModal();toast('Olá, '+n.split(' ')[0]+'!');if(r)r(true);if(ui.view==='admin')render()}
+ACT.usrPick=b=>{const u=users().find(x=>x.id===b.dataset.id);if(u)chooseUser(u.nome)};
+function adminUsr(){const l=users();const st=n=>{const h=S.hist.filter(x=>x.user===n);return{n:h.filter(x=>x.acao==='conferiu').length,t:h.length?h[0].ts:''}};
+ return `<div class="card"><div class="row" style="align-items:center"><h3 style="margin:0">Usuários do programa</h3><button class="btn sm" data-act="usrAdd" style="flex:none">+ Novo usuário</button></div>
+ <p class="muted">Cadastre quem usa o programa (escritório e engenheiros). No topo da tela, o botão com o nome permite <b>trocar de usuário com um toque</b>. O nome aparece no histórico e em cada conferência.</p>
+ <div class="list">${l.map(u=>{const x=st(u.nome);return`<div class="li ${u.nome===user?'sel':''}"><div class="usr-row">${avatar(u.nome)}<div class="grow"><b>${esc(u.nome)}</b> ${u.nome===user?'<span class="usr-on">em uso</span>':''}<div class="muted">${esc(u.papel||'')} · ${x.n} conferência(s)${x.t?' · última atividade '+fdt(x.t):''}</div></div></div>
+  ${u.nome===user?'':`<button class="btn sm" data-act="usrPick" data-id="${u.id}">Usar este</button>`}<button class="btn sec sm" data-act="usrEd" data-id="${u.id}" title="Editar">✎</button><button class="btn red sm" data-act="usrDel" data-id="${u.id}" title="Remover">🗑</button></div>`}).join('')||'<div class="muted">Nenhum usuário cadastrado.</div>'}</div></div>`}
+const papelOpts=()=>PAPEIS.map(p=>({v:p,t:p}));
+ACT.usrAdd=()=>formModal('Novo usuário',[{k:'nome',l:'Nome'},{k:'papel',l:'Função',type:'select',options:papelOpts()}],v=>{if(!v.nome)return false;if(users().some(u=>u.nome.toLowerCase()===v.nome.toLowerCase())){toast('Esse usuário já existe');return false}
+ const u={id:uid(),nome:v.nome,papel:v.papel||PAPEIS[0]};users().push(u);logH('criou','usuario',u.id,'Cadastrou o usuário '+u.nome);save();render()});
+ACT.usrEd=b=>{const u=users().find(x=>x.id===b.dataset.id);if(!u)return;formModal('Editar usuário',[{k:'nome',l:'Nome',value:u.nome},{k:'papel',l:'Função',type:'select',options:papelOpts(),value:u.papel}],v=>{if(!v.nome)return false;const was=u.nome===user;u.nome=v.nome;u.papel=v.papel;if(was){user=v.nome;localStorage.setItem('orcehvac.conf.usuario',user)}save();render()})};
+ACT.usrDel=b=>{const u=users().find(x=>x.id===b.dataset.id);if(!u||!confirm(`Remover o usuário "${u.nome}"? O histórico dele continua registrado.`))return;const c=cfg();c.users=c.users.filter(x=>x.id!==u.id);if(u.nome===user){user='';localStorage.removeItem('orcehvac.conf.usuario')}logH('excluiu','usuario',u.id,'Removeu o usuário '+u.nome);save();render()};
 ACT.user=()=>{askName()};
 async function needUser(){return user?true:askName()}
 
@@ -1183,9 +1210,9 @@ function adminSeg(){const on=hasPw();
  <p class="muted" style="margin-top:10px;font-size:12px">Esta trava evita alterações acidentais e uso por quem não é do escritório. Ela não substitui a proteção do computador ou da pasta compartilhada.</p></div>`}
 function viewAdmin(){
  const t=ui.atab;
- let h=`<div class="tabs">${[['cad','📋 Cadastro passo a passo'],['hist','🕘 Histórico'],['emp','🏢 Empresa e assinatura'],['bkp','💾 Backup e equipe'],['seg','🔒 Senha']].map(([k,l])=>`<button data-act="atab" data-k="${k}" class="${t===k?'on':''}">${l}</button>`).join('')}</div>`;
- h+=`<p class="adm-help muted">${({cad:'Prepare a obra seguindo as etapas abaixo, de cima para baixo.',hist:'Tudo o que foi criado, editado ou conferido, com data e responsável.',emp:'Dados que aparecem no cabeçalho e na assinatura do relatório.',bkp:'Guarde cópias de segurança e sincronize com a equipe.',seg:'Proteja o modo Escritório com senha.'})[t]||''}</p>`;
- if(t==='cad')h+=adminCad();else if(t==='hist')h+=`<div class="card"><h3>Histórico de alterações</h3><div class="hist">${histHTML(S.hist.slice(0,400))}</div></div>`;else if(t==='emp')h+=adminEmp();else if(t==='seg')h+=adminSeg();else h+=adminBkp();
+ let h=`<div class="tabs">${[['cad','📋 Cadastro passo a passo'],['hist','🕘 Histórico'],['emp','🏢 Empresa e assinatura'],['usr','👥 Usuários'],['bkp','💾 Backup e equipe'],['seg','🔒 Senha']].map(([k,l])=>`<button data-act="atab" data-k="${k}" class="${t===k?'on':''}">${l}</button>`).join('')}</div>`;
+ h+=`<p class="adm-help muted">${({cad:'Prepare a obra seguindo as etapas abaixo, de cima para baixo.',hist:'Tudo o que foi criado, editado ou conferido, com data e responsável.',emp:'Dados que aparecem no cabeçalho e na assinatura do relatório.',usr:'Quem usa o programa. Toque em “Usar este” ou no nome no topo para trocar de usuário.',bkp:'Guarde cópias de segurança e sincronize com a equipe.',seg:'Proteja o modo Escritório com senha.'})[t]||''}</p>`;
+ if(t==='cad')h+=adminCad();else if(t==='hist')h+=`<div class="card"><h3>Histórico de alterações</h3><div class="hist">${histHTML(S.hist.slice(0,400))}</div></div>`;else if(t==='emp')h+=adminEmp();else if(t==='seg')h+=adminSeg();else if(t==='usr')h+=adminUsr();else h+=adminBkp();
  $('#cfMain').innerHTML=h;renderKpi();bindImp();
 }
 ACT.atab=b=>{ui.atab=b.dataset.k;render()};
