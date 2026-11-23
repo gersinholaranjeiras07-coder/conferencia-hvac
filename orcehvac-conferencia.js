@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.6.2';
+const APP_VERSION='0.7.0';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -821,6 +821,8 @@ async function openConf(id){
  const it=item(id);if(!it)return;const cat=CATS[it.cat];
  const c=S.conf[id];
  const d={campos:{...(c?.campos||{})},obs:c?.obs||'',fotos:[...(c?.fotos||[])],added:[],removed:[]};
+ const REQ=['modelo','fabricante','tipo'].filter(k=>cat.conf.includes(k));
+ REQ.forEach(k=>{if(!c||!(k in (c.campos||{})))d.campos[k]=(it.campos[k]||'').trim()});
  const fin=c?.estado==='finalizada';
  const pl=plantasDoItem(id).join(', ');
  const draw=async()=>{
@@ -831,7 +833,8 @@ async function openConf(id){
    <div class="panel proj"><h4>📘 Informações do projeto <span class="muted">(somente leitura)</span></h4>
     ${cat.proj.map(k=>`<div class="pr"><label>${F[k].l}</label><div class="v" id="pv_${k}">${esc(it.campos[k]||'—')}</div></div>`).join('')}</div>
    <div class="panel obra"><h4>🏗 Informações encontradas na obra</h4>
-    ${cat.conf.map(k=>`<div class="pr"><label>${F[k].l}</label><input type="text" data-k="${k}" id="cf_${k}" value="${esc(d.campos[k]||'')}" placeholder="${it.campos[k]?'Projeto: '+esc(it.campos[k]):''}" autocomplete="off"></div>`).join('')}
+    ${cat.conf.map(k=>`<div class="pr"><label>${F[k].l}${REQ.includes(k)?' <b style="color:#b42318" title="Obrigatório">*</b>':''}</label><input type="text" data-k="${k}" id="cf_${k}" value="${esc(d.campos[k]||'')}" placeholder="${it.campos[k]?'Projeto: '+esc(it.campos[k]):REQ.includes(k)?'Obrigatório — informe o que foi encontrado':''}" ${REQ.includes(k)?'required':''} autocomplete="off"></div>`).join('')}
+    ${REQ.length?'<p class="muted" style="margin:0 0 8px;font-size:12px"><b style="color:#b42318">*</b> Obrigatórios: já vêm preenchidos com o que está no projeto. Confira na obra e <b>corrija</b> o que for diferente.</p>':''}
     <div class="pr"><label>Observações</label><textarea id="cf_obs">${esc(d.obs)}</textarea></div>
     <div class="pr"><label>Fotografias do equipamento instalado</label>
      <input type="file" id="cf_foto" accept="image/*" multiple capture="environment" style="display:none">
@@ -850,6 +853,8 @@ async function openConf(id){
   harvest();
   if(!await needUser()){toast('Informe seu nome para salvar a conferência');return}
   if(final){
+   const miss=REQ.filter(k=>!(d.campos[k]||'').trim());
+   if(miss.length){toast('Preencha os campos obrigatórios: '+miss.map(k=>F[k].l).join(', '));const e=$('#cf_'+miss[0]);if(e){e.classList.add('bad');e.focus()}return}
    const empt=cat.conf.filter(k=>(it.campos[k]||'').trim()&&!(d.campos[k]||'').trim());
    if(empt.length&&!confirm('Campos sem preenchimento serão considerados DIVERGENTES:\n- '+empt.map(k=>F[k].l).join('\n- ')+'\n\nFinalizar mesmo assim?'))return;
   }
@@ -1169,7 +1174,7 @@ const LOGO='<svg viewBox="0 0 64 64" width="64" height="64"><defs><linearGradien
 function showLogin(then){
  const c=document.getElementById('content');if(!c)return;
  const L=document.createElement('div');L.className='cf cf-login';root=L;c.replaceChildren(L);
- let step=S.usuarios.length?'pick':'first',sel=null,fails=0,lockUntil=0,keep=false,note='',recCode='',pendUser=null;
+ let step=S.usuarios.length?'pick':(desk()?'first':'nouser'),sel=null,fails=0,lockUntil=0,keep=false,note='',recCode='',pendUser=null;
  const shell=inner=>`<div class="lg-wrap"><div class="lg-card"><div class="lg-logo">${LOGO}</div><h1>Comissionamento de obra</h1>${inner}</div><div class="lg-foot">Versão ${APP_VERSION}</div></div>`;
  const eye=id=>`<button type="button" class="lg-eye" data-eye="${id}" title="Mostrar/ocultar senha">👁</button>`;
  const draw=()=>{let h='';
@@ -1182,6 +1187,7 @@ function showLogin(then){
    <div class="fld"><label for="fs_n">Seu nome</label><input id="fs_n" type="text" autocomplete="name" value="${esc(user||'')}"></div>
    <div class="fld"><label for="fs_p1">Senha (mínimo 4 caracteres)</label><div class="lg-pw"><input id="fs_p1" type="password" autocomplete="new-password">${eye('fs_p1')}</div></div>
    <div class="fld"><label for="fs_p2">Repita a senha</label><input id="fs_p2" type="password" autocomplete="new-password"></div><div id="lg_err" class="lg-err"></div><button class="btn lg-go" id="fs_go">Criar administrador e entrar</button>`;
+  else if(step==='nouser')h=`<p class="lg-sub">Acesso não liberado</p><p class="muted lg-p">Ainda não há usuários cadastrados neste aparelho. Peça ao <b>escritório</b> para cadastrar o seu usuário e senha e enviar a lista atualizada. Depois toque em <b>Tentar novamente</b>.</p><div id="lg_err" class="lg-err"></div><button class="btn lg-go" id="nu_go">Tentar novamente</button>`;
   else if(step==='rec')h=`<p class="lg-sub">✅ Administrador criado</p><p class="muted lg-p">Anote o <b>código de recuperação</b>. Ele é a única forma de redefinir a senha do administrador se você esquecer. Só aparece agora.</p><div class="lg-code">${recCode.slice(0,5)}-${recCode.slice(5)}</div><button class="btn lg-go" id="rc_go">Anotei, continuar</button>`;
   else if(step==='forgot'){h=`<div class="lg-who">${avatar(sel.nome,false,true)}<b>${esc(sel.nome)}</b></div>`+(sel.papel==='Administrador'?`<p class="muted lg-p">Digite o <b>código de recuperação</b> do administrador e defina uma nova senha.</p>
    <div class="fld"><label for="fg_c">Código de recuperação</label><input id="fg_c" type="text" autocomplete="off" style="text-transform:uppercase"></div><div class="fld"><label for="fg_p1">Nova senha</label><input id="fg_p1" type="password" autocomplete="new-password"></div><div class="fld"><label for="fg_p2">Repita a nova senha</label><input id="fg_p2" type="password" autocomplete="new-password"></div><div id="lg_err" class="lg-err"></div><button class="btn lg-go" id="fg_go">Redefinir senha</button>`
@@ -1201,6 +1207,7 @@ function showLogin(then){
   if(step==='first'){const f=()=>{const n=q('#fs_n').value.trim(),a=q('#fs_p1').value,b=q('#fs_p2').value;if(!n)return err('Digite seu nome.');if(a.length<4)return err('A senha precisa ter pelo menos 4 caracteres.');if(a!==b)return err('As senhas não conferem.');
     const salt=newSalt(),u={id:uid(),nome:n,papel:'Administrador',s:salt,h:hashPw(a,salt)};S.usuarios.push(u);recCode=newCode();S.cfg=S.cfg||{};S.cfg.rec={s:salt,h:hashPw(recCode,salt)};pendUser=u;user=n;logH('criou','usuario',u.id,'Criou o administrador '+n);save();step='rec';draw()};
    q('#fs_go').onclick=f;q('#fs_p2').onkeydown=e=>{if(e.key==='Enter')f()};setTimeout(()=>q('#fs_n')?.focus(),40)}
+  if(step==='nouser')q('#nu_go').onclick=async()=>{q('#nu_go').disabled=true;q('#nu_go').textContent='Verificando…';await loadUserFile();if(S.usuarios.length){step='pick';draw()}else{q('#nu_go').disabled=false;q('#nu_go').textContent='Tentar novamente';err('Ainda não há usuários. Fale com o escritório.')}};
   if(step==='rec')q('#rc_go').onclick=()=>go(pendUser);
   if(step==='forgot'){const b=q('#lg_back2');if(b)b.onclick=e=>{e.preventDefault();step='pw';draw()};const g=q('#fg_go');
    if(g)g.onclick=()=>{const c=q('#fg_c').value.trim().toUpperCase().replace(/[\s-]/g,''),a=q('#fg_p1').value,b2=q('#fg_p2').value,r=S.cfg&&S.cfg.rec;
