@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.10.2';
+const APP_VERSION='0.10.3';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -1625,7 +1625,7 @@ const avatar=(n,sm,big)=>`<span class="usr-av ${sm?'sm':''} ${big?'big':''}" sty
 const sessGet=()=>{try{return sessionStorage.getItem('orcehvac.conf.sess')||localStorage.getItem('orcehvac.conf.sess')||''}catch(e){return ''}};
 const sessSet=(id,keep)=>{try{sessionStorage.setItem('orcehvac.conf.sess',id);if(keep)localStorage.setItem('orcehvac.conf.sess',id);else localStorage.removeItem('orcehvac.conf.sess')}catch(e){}};
 const sessClear=()=>{try{sessionStorage.removeItem('orcehvac.conf.sess');localStorage.removeItem('orcehvac.conf.sess')}catch(e){}};
-const sbUser=()=>{const em=(sbSess&&sbSess.email)||'';const n=em.replace(SB_DOM,'').split('@')[0].replace(/[._-]+/g,' ');return {id:'sb:'+em,nome:n.replace(/\b\w/g,c=>c.toUpperCase())||'Engenheiro',papel:'Engenheiro (campo)',sb:true,email:em}};
+const sbUser=()=>{const em=(sbSess&&sbSess.email)||'';const n=em.replace(SB_DOM,'').split('@')[0].replace(/[._-]+/g,' ');return {id:'sb:'+em,nome:n.replace(/\b\w/g,c=>c.toUpperCase())||'Engenheiro',papel:(sbSess&&/^(Administrador|Escrit)/.test(sbSess.papel||''))?sbSess.papel:'Engenheiro (campo)',sb:true,email:em}};
 function loginAs(u,keep){me=u;user=u.nome;localStorage.setItem('orcehvac.conf.usuario',user);sessSet(u.id,keep);if(!canOffice()){mode='campo';localStorage.setItem('orcehvac.conf.modo','campo')}}
 function gate(then){
  if(me&&me.sb&&sbSess)return true;
@@ -1735,7 +1735,7 @@ ACT.usrDel=b=>{const u=S.usuarios.find(x=>x.id===b.dataset.id);if(!u||u.id===me.
 
 function viewAdmin(){
  const t=ui.atab;
- let h=`<div class="tabs">${[['cad','📋 Cadastro passo a passo'],['hist','🕘 Histórico'],['emp','🏢 Empresa e assinatura'],['chk','📝 Modelos de checklist'],...(isAdm()?[['usr','👥 Usuários e acessos']]:[]),['bkp','💾 Backup e equipe']].map(([k,l])=>`<button data-act="atab" data-k="${k}" class="${t===k?'on':''}">${l}</button>`).join('')}</div>`;
+ let h=`<div class="tabs">${[['cad','📋 Cadastro passo a passo'],['hist','🕘 Histórico'],['emp','🏢 Empresa e assinatura'],['chk','📝 Modelos de checklist'],...(isAdm()&&!me.sb?[['usr','👥 Usuários e acessos']]:[]),['bkp','💾 Backup e equipe']].map(([k,l])=>`<button data-act="atab" data-k="${k}" class="${t===k?'on':''}">${l}</button>`).join('')}</div>`;
  h+=`<p class="adm-help muted">${({cad:'Prepare a obra seguindo as etapas abaixo, de cima para baixo.',hist:'Tudo o que foi criado, editado ou conferido, com data e responsável.',emp:'Dados que aparecem no cabeçalho e na assinatura do relatório.',chk:'Verificações e medições que o engenheiro preenche na conferência de cada tipo de equipamento.',usr:'Quem pode entrar no programa e o que cada pessoa pode fazer.',bkp:'Guarde cópias de segurança e sincronize com a equipe.'})[t]||''}</p>`;
  if(t==='cad')h+=adminCad();else if(t==='hist')h+=`<div class="card"><h3>Histórico de alterações</h3><div class="hist">${histHTML(S.hist.slice(0,400))}</div></div>`;else if(t==='emp')h+=adminEmp();else if(t==='chk')h+=adminChk();else if(t==='usr'&&isAdm())h+=adminUsr();else h+=adminBkp();
  $('#cfMain').innerHTML=h;renderKpi();bindImp();
@@ -1856,7 +1856,7 @@ async function sbAuth(grant,body){
  const r=await fetch(SB.url+'/auth/v1/token?grant_type='+grant,{method:'POST',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify(body)});
  const j=await r.json().catch(()=>({}));
  if(!r.ok){const e=new Error(r.status===400&&grant==='password'?'E-mail ou senha incorretos.':(j.error_description||j.msg||j.message||('erro '+r.status)));e.status=r.status;throw e}
- sbSave({access_token:j.access_token,refresh_token:j.refresh_token,exp:Date.now()+(j.expires_in||3600)*1000-60000,email:(j.user&&j.user.email)||(sbSess&&sbSess.email)||body.email});return sbSess}
+ sbSave({access_token:j.access_token,refresh_token:j.refresh_token,exp:Date.now()+(j.expires_in||3600)*1000-60000,email:(j.user&&j.user.email)||(sbSess&&sbSess.email)||body.email,papel:(j.user&&j.user.app_metadata&&j.user.app_metadata.papel)||''});return sbSess}
 async function sbToken(){if(!sbSess)return null;if(Date.now()<sbSess.exp)return sbSess.access_token;
  try{await sbAuth('refresh_token',{refresh_token:sbSess.refresh_token});return sbSess.access_token}catch(e){if(e.status&&e.status>=400&&e.status<500){sbSave(null);throw new Error('Sessão da nuvem expirou. Entre de novo.')}throw e}}
 async function sbReq(path,opt){const t=await sbToken();if(!t)throw new Error('Não conectado à nuvem');
