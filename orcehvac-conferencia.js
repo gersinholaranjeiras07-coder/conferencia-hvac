@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.9.2';
+const APP_VERSION='0.9.3';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -1645,11 +1645,16 @@ const LOGO='<svg viewBox="0 0 64 64" width="64" height="64"><rect width="64" hei
 function showLogin(then){
  const c=document.getElementById('content');if(!c)return;
  const L=document.createElement('div');L.className='cf cf-login';root=L;c.replaceChildren(L);
- let step=S.usuarios.length?'pick':(desk()?'first':'nouser'),sel=null,fails=0,lockUntil=0,keep=false,note='',recCode='',pendUser=null;
+ let step=desk()?(S.usuarios.length?'pick':'first'):'type',sel=null,fails=0,lockUntil=0,keep=false,note='',recCode='',pendUser=null;
  const shell=inner=>`<div class="lg-wrap"><div class="lg-card"><div class="lg-logo">${LOGO}</div><h1>Comissionamento de obra</h1>${inner}</div><div class="lg-foot">Versão ${APP_VERSION}</div></div>`;
  const eye=id=>`<button type="button" class="lg-eye" data-eye="${id}" title="Mostrar/ocultar senha">👁</button>`;
  const draw=()=>{let h='';
-  if(step==='pick')h=`<p class="lg-sub">Quem vai entrar?</p>${note?`<div class="lg-ok">${esc(note)}</div>`:''}<div class="usr-grid">${S.usuarios.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')).map(u=>`<button class="usr-card" data-uid="${u.id}">${avatar(u.nome,false,true)}<b>${esc(u.nome)}</b><span class="muted">${esc(u.papel)}</span></button>`).join('')}</div>`;
+  if(step==='type')h=`<p class="lg-sub">Entre com seu usuário</p><p class="muted lg-p" style="margin-top:0">O usuário e a senha são passados pelo escritório.</p>${note?`<div class="lg-ok">${esc(note)}</div>`:''}
+   <div class="fld"><label for="tl_u">Usuário</label><input id="tl_u" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" autofocus></div>
+   <div class="fld"><label for="tl_p">Senha</label><div class="lg-pw"><input id="tl_p" type="password" autocomplete="current-password">${eye('tl_p')}</div></div><div id="lg_err" class="lg-err"></div>
+   <label class="lg-keep"><input type="checkbox" id="tl_keep" ${keep?'checked':''}> Manter conectado neste aparelho</label>
+   <button class="btn lg-go" id="tl_go">Entrar</button><div class="lg-links"><a href="#" id="tl_forgot">Esqueci minha senha</a></div>`;
+  else if(step==='pick')h=`<p class="lg-sub">Quem vai entrar?</p>${note?`<div class="lg-ok">${esc(note)}</div>`:''}<div class="usr-grid">${S.usuarios.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')).map(u=>`<button class="usr-card" data-uid="${u.id}">${avatar(u.nome,false,true)}<b>${esc(u.nome)}</b><span class="muted">${esc(u.papel)}</span></button>`).join('')}</div>`;
   else if(step==='pw')h=`<div class="lg-who">${avatar(sel.nome,false,true)}<b>${esc(sel.nome)}</b><span class="muted">${esc(sel.papel)}</span></div>${note?`<div class="lg-ok">${esc(note)}</div>`:''}
    <div class="fld"><label for="lg_pw">Senha</label><div class="lg-pw"><input id="lg_pw" type="password" autocomplete="current-password" autofocus>${eye('lg_pw')}</div></div><div id="lg_err" class="lg-err"></div>
    <label class="lg-keep"><input type="checkbox" id="lg_keep" ${keep?'checked':''}> Manter conectado neste aparelho</label>
@@ -1678,6 +1683,16 @@ function showLogin(then){
   if(step==='first'){const f=()=>{const n=q('#fs_n').value.trim(),a=q('#fs_p1').value,b=q('#fs_p2').value;if(!n)return err('Digite seu nome.');if(a.length<4)return err('A senha precisa ter pelo menos 4 caracteres.');if(a!==b)return err('As senhas não conferem.');
     const salt=newSalt(),u={id:uid(),nome:n,papel:'Administrador',s:salt,h:hashPw(a,salt)};S.usuarios.push(u);recCode=newCode();S.cfg=S.cfg||{};S.cfg.rec={s:salt,h:hashPw(recCode,salt)};pendUser=u;user=n;logH('criou','usuario',u.id,'Criou o administrador '+n);save();step='rec';draw()};
    q('#fs_go').onclick=f;q('#fs_p2').onkeydown=e=>{if(e.key==='Enter')f()};setTimeout(()=>q('#fs_n')?.focus(),40)}
+  if(step==='type'){const f=async()=>{const now=Date.now();if(now<lockUntil)return err('Muitas tentativas. Aguarde '+Math.ceil((lockUntil-now)/1000)+' s.');
+    const nm=normT(q('#tl_u').value.trim()),pw=q('#tl_p').value;keep=q('#tl_keep').checked;if(!nm||!pw)return err('Digite o usuário e a senha.');
+    const b=q('#tl_go');b.disabled=true;b.textContent='Entrando…';
+    try{if(!S.usuarios.length||!S.usuarios.some(u=>normT(u.nome)===nm))await loadUserFile()}catch{}
+    b.disabled=false;b.textContent='Entrar';
+    if(!S.usuarios.length)return err('Não consegui carregar a lista de usuários. Verifique a internet e tente de novo; se continuar, avise o escritório.');
+    const u=S.usuarios.find(x=>normT(x.nome)===nm);if(u&&u.h&&hashPw(pw,u.s)===u.h){go(u);return}
+    fails++;if(fails>=5){fails=0;lockUntil=Date.now()+30000;err('Muitas tentativas. Aguarde 30 s.')}else err('Usuário ou senha incorretos.');q('#tl_p').select()};
+   q('#tl_go').onclick=f;q('#tl_p').onkeydown=e=>{if(e.key==='Enter')f()};q('#tl_u').onkeydown=e=>{if(e.key==='Enter')q('#tl_p').focus()};setTimeout(()=>q('#tl_u')?.focus(),40);
+   q('#tl_forgot').onclick=e=>{e.preventDefault();err('Peça ao escritório para redefinir a sua senha.')}}
   if(step==='nouser')q('#nu_go').onclick=async()=>{q('#nu_go').disabled=true;q('#nu_go').textContent='Verificando…';await loadUserFile();if(S.usuarios.length){step='pick';draw()}else{q('#nu_go').disabled=false;q('#nu_go').textContent='Tentar novamente';err('Ainda não há usuários. Fale com o escritório.')}};
   if(step==='rec')q('#rc_go').onclick=()=>go(pendUser);
   if(step==='forgot'){const b=q('#lg_back2');if(b)b.onclick=e=>{e.preventDefault();step='pw';draw()};const g=q('#fg_go');
