@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.13.0';
+const APP_VERSION='0.13.1';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -91,7 +91,7 @@ function same(k,a,b){a=String(a??'').trim();b=String(b??'').trim();if(!a||!b)ret
  if(TOLK.includes(k)){const x=nums(a),y=nums(b);if(x.length===1&&y.length===1)return y[0]>=x[0]-1e-9&&y[0]<=x[0]*(1+TOLS[k])+1e-9}
  if(F[k].num){const x=nums(a),y=nums(b);if(x.length&&y.length)return x.length===y.length&&x.every((v,i)=>v===y[i])}
  return normT(a)===normT(b)}
-const CF_KEYS=['vazao','vazaoagua'],PJ_HIDE=['tipo','dimensoes'],CK=cat=>cat.conf.filter(k=>CF_KEYS.includes(k)),CHK_ON=false;
+const CF_KEYS=['vazao','vazaoagua'],PJ_HIDE=['tipo','dimensoes'],CF_FC=['potencia','tensaoeq'],CK=cat=>cat.conf.filter(k=>CF_KEYS.includes(k)||(CF_FC.includes(k)&&(cat.l==='Fancolete'||cat.l==='Fancoil'))),CHK_ON=false;
 function diverg(id){const it=item(id),c=S.conf[id];if(!it||!c)return[];
  return CK(CATS[it.cat]).filter(k=>{const pv=(it.campos[k]||'').trim();return pv&&!same(k,pv,c.campos[k]||'')})}
 function statusOf(id){const c=S.conf[id];if(!c)return 'pendente';if(c.estado!=='finalizada')return 'em_conferencia';return (diverg(id).length||chkFails(id).length)?'divergente':'conferido'}
