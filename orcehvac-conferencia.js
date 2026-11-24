@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.11.0';
+const APP_VERSION='0.12.0';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -98,9 +98,9 @@ function statusOf(id){const c=S.conf[id];if(!c)return 'pendente';if(c.estado!=='
 const projItens=pid=>S.itens.filter(i=>i.projetoId===pid);
 function scopeItens(){let l=ui.projetoId?projItens(ui.projetoId):ui.obraId?S.itens.filter(i=>proj(i.projetoId)?.obraId===ui.obraId):[];if(ui.projetoId&&ui.pav)l=l.filter(i=>pavLabel(i)===ui.pav);return l}
 function counts(list){const c={conferido:0,divergente:0,pendente:0,em_conferencia:0};list.forEach(i=>c[statusOf(i.id)]++);return c}
-const PAVS=['Subsolo 2','Subsolo 1','Térreo','1º Pavimento','2º Pavimento','3º Pavimento','4º Pavimento','5º Pavimento','Cobertura','Casa de máquinas'];
+const PAVS=['Subsolo 2','Subsolo 1','Térreo','1º Pavimento','2º Pavimento','3º Pavimento','4º Pavimento','5º Pavimento','Cobertura','Casa de máquinas','Pavimento Superior','Pavimento Inferior','Pavimento Tipo','Mezanino'];
 function pavRank(n){const t=normT(n||'');if(!t||t==='sempavimento')return 9999;if(t.includes('sub')||/^ss/.test(t))return -(parseInt((t.match(/\d+/)||[1])[0]))-0.5+1;if(t.includes('terreo')||t==='t')return 0;
- if(t.includes('cobertura')||t.includes('cob'))return 1000;if(t.includes('barrilete')||t.includes('casademaq'))return 1001;const m=t.match(/\d+/);return m?+m[0]:500}
+ if(t.includes('cobertura')||t.includes('cob'))return 1000;if(t.includes('mezanino'))return .5;if(t.includes('pavimentosuperior'))return 600;if(t.includes('pavimentoinferior'))return -.2;if(t.includes('pavimentotipo'))return 400;if(t.includes('barrilete')||t.includes('casademaq'))return 1001;const m=t.match(/\d+/);return m?+m[0]:500}
 const pavSort=(a,b)=>pavRank(a)-pavRank(b)||a.localeCompare(b);
 function pavOf(i){if(i.campos.pavimento)return i.campos.pavimento;const m=S.marcas.find(x=>x.itemId===i.id);return(m&&planta(m.plantaId)?.pav)||''}
 const pavLabel=i=>pavOf(i)||'Sem pavimento';
@@ -257,7 +257,7 @@ async function loadPage(){
    await pg.render({canvasContext:ctx,viewport:vw,background:'rgb(255,255,255)'}).promise;
   }else if(p.tipo==='dxf'){
    await ensureDxf();
-   if(!docCache[p.id]){const had=!!p.dxfExt;docCache[p.id]=dxfPrepare(await readText(blob),p);if(!had&&p.dxfExt)save()}
+   if(!docCache[p.id]){const had=!!p.dxfExt,tx=await readText(blob);docCache[p.id]=dxfPrepare(tx,p);let ch=!had&&p.dxfExt;if(!p.pav){let v='';try{v=detectPav(tx,[p.nome])}catch(e){}if(pavApply(p,v)){ch=true;toast('Pavimento identificado no desenho: '+v)}}if(ch)save()}
    const d=docCache[p.id];cv.style.display='none';ensureCv2();w=d.w;h=d.h;setTimeout(()=>dxfNote(d),0);
   }else{
    const img=new Image();img.src=await urlFor(p.blobId);await img.decode();
@@ -1819,13 +1819,41 @@ ACT.edProj=b=>{const p=proj(b.dataset.id);formModal('Editar projeto',[{k:'nome',
 function delProjeto(id){projItens(id).forEach(i=>delItemById(i.id));S.plantas.filter(p=>p.projetoId===id).forEach(p=>{blobDel(p.blobId);delete docCache[p.id]});S.marcas=S.marcas.filter(m=>planta(m.plantaId)&&planta(m.plantaId).projetoId!==id);S.plantas=S.plantas.filter(p=>p.projetoId!==id);S.projetos=S.projetos.filter(p=>p.id!==id)}
 ACT.delProj=b=>{const p=proj(b.dataset.id);if(!confirm(`Excluir o projeto "${p.nome}" com plantas, itens e conferências?`))return;delProjeto(p.id);logH('excluiu','projeto',p.id,'Excluiu projeto '+p.nome);if(ui.projetoId===p.id){ui.projetoId='';ui.plantaId=''}save();render()};
 const fileTipo=f=>{if(/\.dwg$/i.test(f.name)){toast('DWG não é suportado: no AutoCAD use SALVAR COMO › DXF (ou exporte em PDF)');return null}return /\.dxf$/i.test(f.name)?'dxf':/pdf$/i.test(f.type)||/\.pdf$/i.test(f.name)?'pdf':/^image\//.test(f.type)?'img':null};
-ACT.addPl=()=>formModal('Enviar planta',[{k:'nome',l:'Nome da planta (ex.: Climatização — 3º pavimento)'},{k:'pav',l:'Pavimento',list:PAVS},{k:'disc',l:'Disciplina / categoria',list:DISCIPLINAS,value:'Climatização'},{k:'file',l:'Arquivo (PDF, DXF, PNG, JPG)',type:'file',accept:'.pdf,.dxf,image/*'}],async v=>{
+/* ---------- Pavimento lido do desenho (carimbo, textos, nome do arquivo) ---------- */
+function pavFromStr(x){
+ const t=String(x||'').replace(/\s+/g,' ').trim();if(!t||t.length>90||/\$|XREF/i.test(t))return '';
+ const u=t.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase();let m;
+ if(/\bSUBSOLO\b|\bSS\s*\d\b/.test(u)){m=u.match(/(?:SUBSOLO|\bSS)\s*-?\s*(\d)/);return 'Subsolo '+(m?m[1]:'1')}
+ if(/\bTERREO\b|\bPAV\.?\s*TERREO\b/.test(u))return 'Térreo';
+ if(/\bCOBERTURA\b/.test(u))return 'Cobertura';
+ if(/CASA\s+DE\s+MAQUINAS?/.test(u))return 'Casa de máquinas';
+ if(/\bMEZANINO\b/.test(u))return 'Mezanino';
+ if(m=u.match(/\b(\d{1,2})\s*[ºO°ª]?\s*(?:PAVIMENTO|PAV\b|ANDAR)/)||u.match(/\b(?:PAVIMENTO|PAV|ANDAR)\.?\s*(\d{1,2})\b/))return m[1]+'º Pavimento';
+ if(/\bPAV(?:IMENTO)?\.?\s*SUP(?:ERIOR)?\b/.test(u))return 'Pavimento Superior';
+ if(/\bPAV(?:IMENTO)?\.?\s*INF(?:ERIOR)?\b/.test(u))return 'Pavimento Inferior';
+ if(/\bPAV(?:IMENTO)?\.?\s*TIPO\b/.test(u))return 'Pavimento Tipo';
+ return ''}
+function detectPav(text,nomes){
+ const cnt=new Map(),first=new Map();let n=0;
+ const add=(v,w)=>{if(!v)return;cnt.set(v,(cnt.get(v)||0)+w);if(!first.has(v))first.set(v,n++)};
+ if(text){const L=text.split(/\r?\n/);
+  for(let i=0;i+1<L.length;i+=2){const c=L[i].trim();if(c!=='1'&&c!=='3')continue;
+   const v=L[i+1].replace(/\\P/g,' ').replace(/\\[A-Za-z][^;]*;/g,'').replace(/[{}]/g,'');
+   add(pavFromStr(v),/ - /.test(v)?3:1)}}
+ let best='',bs=0;for(const[k,v]of cnt)if(v>bs||(v===bs&&first.get(k)<first.get(best))){best=k;bs=v}
+ if(best)return best;
+ for(const nm of nomes||[]){const v=pavFromStr(String(nm||'').replace(/\.[^.]+$/,'').replace(/[_]+/g,' '));if(v)return v}
+ return ''}
+function pavApply(p,v){if(!v||p.pav)return false;p.pav=v;
+ S.itens.forEach(i=>{if(i.projetoId===p.projetoId&&!i.campos.pavimento&&i.src&&String(i.src).startsWith('leg:'+p.id+':'))i.campos.pavimento=v});return true}
+ACT.addPl=()=>formModal('Enviar planta',[{k:'nome',l:'Nome da planta (ex.: Climatização — 3º pavimento)'},{k:'pav',l:'Pavimento (em branco = o programa lê do desenho)',list:PAVS},{k:'disc',l:'Disciplina / categoria',list:DISCIPLINAS,value:'Climatização'},{k:'file',l:'Arquivo (PDF, DXF, PNG, JPG)',type:'file',accept:'.pdf,.dxf,image/*'}],async v=>{
  if(!v.file){toast('Selecione o arquivo da planta');return false}const tipo=fileTipo(v.file);if(!tipo){toast('Formato não suportado — use PDF, DXF, PNG ou JPG');return false}
  const p={id:uid(),projetoId:ui.projetoId,nome:v.nome||v.file.name.replace(/\.[^.]+$/,''),pav:v.pav,disc:v.disc,tipo,blobId:'pl_'+uid()};
- await blobSet(p.blobId,v.file);S.plantas.push(p);logH('criou','planta',p.id,'Enviou planta '+p.nome);save();render();toast('Planta enviada')},'Enviar');
+ let auto='';if(!p.pav){try{auto=detectPav(tipo==='dxf'?await readText(v.file):'',[v.nome,v.file.name])}catch(e){}if(auto)p.pav=auto}
+ await blobSet(p.blobId,v.file);S.plantas.push(p);logH('criou','planta',p.id,'Enviou planta '+p.nome);save();render();toast(auto?'Planta enviada · pavimento identificado: '+auto:'Planta enviada')},'Enviar');
 ACT.edPl=b=>{const p=planta(b.dataset.id);formModal('Editar planta',[{k:'nome',l:'Nome',value:p.nome},{k:'pav',l:'Pavimento',value:p.pav,list:PAVS},{k:'disc',l:'Disciplina',value:p.disc,list:DISCIPLINAS},{k:'file',l:'Substituir arquivo (opcional)',type:'file',accept:'.pdf,.dxf,image/*'}],async v=>{
  if(v.file){const t=fileTipo(v.file);if(!t){toast('Formato não suportado');return false}await blobSet(p.blobId,v.file);p.tipo=t;p.paginas=0;delete docCache[p.id]}
- p.nome=v.nome||p.nome;p.disc=v.disc;p.pav=v.pav;logH('editou','planta',p.id,'Editou planta '+p.nome);save();render()})};
+ p.nome=v.nome||p.nome;p.disc=v.disc;p.pav=v.pav;if(!p.pav&&v.file&&p.tipo==='dxf'){try{pavApply(p,detectPav(await readText(v.file),[p.nome,v.file.name]))}catch(e){}}logH('editou','planta',p.id,'Editou planta '+p.nome);save();render()})};
 ACT.delPl=b=>{const p=planta(b.dataset.id);if(!confirm(`Excluir a planta "${p.nome}"? Os pontos nela serão removidos (os itens continuam cadastrados).`))return;blobDel(p.blobId);delete docCache[p.id];S.marcas=S.marcas.filter(m=>m.plantaId!==p.id);S.plantas=S.plantas.filter(x=>x.id!==p.id);logH('excluiu','planta',p.id,'Excluiu planta '+p.nome);save();render()};
 ACT.posPl=b=>openPlanta(b.dataset.id);
 
