@@ -97,7 +97,7 @@
 .cf #mks{position:absolute;inset:0}
 .cf .mk{position:absolute;transform:translate(-50%,-50%) scale(var(--inv,1));cursor:pointer;touch-action:none}
 .cf .mk i{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.55);font:700 9px/1 system-ui;color:#fff;font-style:normal}
-.cf .mk i.s-pendente{color:#422006}
+.cf .mk i{letter-spacing:-.3px}.cf .mk i.s-pendente{color:#422006}
 .cf .mk b{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:1px;font-size:10px;background:rgba(255,255,255,.9);padding:0 4px;border-radius:4px;white-space:nowrap;border:1px solid #cbd5e1}
 .cf .mk.hl i{animation:pulse .7s 3}
 @keyframes pulse{50%{transform:scale(1.8)}}

@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.12.0';
+const APP_VERSION='0.13.0';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -24,7 +24,7 @@ const GR_EQ={proj:['tag','pavimento','fabricante','modelo','tipo','capacidade','
 const GR_FC={proj:['tag','pavimento','fabricante','modelo','tipo','capacidade','potencia','vazao','vazaoagua','corrente','tensaoeq','quadro','localizacao','outros'],conf:['fabricante','modelo','tipo','capacidade','potencia','vazao','vazaoagua','corrente','tensaoeq','quadro']};
 const CATS={
  bomba:{l:'Bomba',s:'B',...GR_EQ},chiller:{l:'Chiller',s:'CH',...GR_EQ},
- fancolete:{l:'Fancolete',s:'FL',...GR_FC},fancoil:{l:'Fancoil',s:'FC',...GR_FC},
+ fancolete:{l:'Fancolete',s:'FCTH',...GR_FC},fancoil:{l:'Fancoil',s:'FC',...GR_FC},
  difusor:{l:'Difusor',s:'D',...GR_TERM},grelha:{l:'Grelha',s:'G',...GR_TERM},
  damper:{l:'Damper',s:'DP',...GR_DAMP}
 };
@@ -244,7 +244,7 @@ function viewPlant(){
 async function loadPage(){
  const tok=++renderTok,p=V.p,cv=$('#cv');if(!cv)return;
  try{
-  const blob=await blobGet(p.blobId);if(!blob)throw new Error('Arquivo da planta não encontrado no banco local. Reimporte o projeto.');
+  const blob=await blobGet(p.blobId),leanB=p.tipo==='dxf'?await blobGet(p.blobId+'_L'):null;if(!blob&&!leanB)throw new Error('Arquivo da planta não encontrado no banco local. Reimporte o projeto.');
   let w,h;const ctx=cv.getContext('2d');
   if(p.tipo==='pdf'){
    const eng=await ensurePdf();
@@ -256,8 +256,10 @@ async function loadPage(){
    cv.width=Math.round(vw.width);cv.height=Math.round(vw.height);w=v0.width;h=v0.height;
    await pg.render({canvasContext:ctx,viewport:vw,background:'rgb(255,255,255)'}).promise;
   }else if(p.tipo==='dxf'){
-   await ensureDxf();
-   if(!docCache[p.id]){const had=!!p.dxfExt,tx=await readText(blob);docCache[p.id]=dxfPrepare(tx,p);let ch=!had&&p.dxfExt;if(!p.pav){let v='';try{v=detectPav(tx,[p.nome])}catch(e){}if(pavApply(p,v)){ch=true;toast('Pavimento identificado no desenho: '+v)}}if(ch)save()}
+   if(!docCache[p.id]){const had=!!p.dxfExt;let B=null,pv='';
+    if(leanB){try{const r=await leanRead(leanB);B=r.B;pv=r.pav}catch(e){console.warn('lean',e)}}
+    if(!B){await ensureDxf();if(!blob)throw new Error('Arquivo da planta não encontrado no banco local. Reimporte o projeto.');const tx=await readText(blob);B=dxfBase(tx);try{pv=detectPav(tx,[p.nome])}catch(e){}const js=leanJSON(B,pv);setTimeout(()=>leanSave(p,js),200)}
+    docCache[p.id]=dxfFinish(B,p);let ch=!had&&p.dxfExt;if(!p.pav&&pavApply(p,pv)){ch=true;toast('Pavimento identificado no desenho: '+pv)}if(ch)save()}
    const d=docCache[p.id];cv.style.display='none';ensureCv2();w=d.w;h=d.h;setTimeout(()=>dxfNote(d),0);
   }else{
    const img=new Image();img.src=await urlFor(p.blobId);await img.decode();
@@ -478,7 +480,7 @@ function ductScan(layers,prims){
    for(const q of dp){if(t.x1+tol<q.x0||t.x0-tol>q.x1||t.y1+tol<q.y0||t.y0-tol>q.y1)continue;for(let i=1;i<q.p.length;i++){const dd=segDist(cx,cy,q.p[i-1],q.p[i]);if(dd<bd){bd=dd;best=q}}}
    if(best&&bd<=tol)dims.push({txt,t,q:best,k:best.k,cx,cy,room:-1})}}
  return{dims,kinds,kc}}
-function dxfPrepare(text,pl){
+function dxfBase(text){
  const dxf=new DxfParser().parseSync(text);if(!dxf)throw new Error('DXF inválido');
  let raw={ins:new Map(),hatches:[],types:{}};try{raw=rawScan(text)}catch(e){console.warn('rawScan',e)}
  const recs=[];let curLy='0';
@@ -535,6 +537,12 @@ function dxfPrepare(text,pl){
  if(!prims.length&&!raw.hatches.some(h=>!h.ps&&h.loops.length)&&paperE.length){walk(paperE,[1,0,0,1,0,0],null,0);usedPaper=true}
  raw.hatches.filter(h=>h.ps===usedPaper).forEach(h=>{const L=layers[h.ly];if(L&&(L.visible===false||L.frozen))return;const c=dxfColor(L?.color??0);curLy=h.ly;h.loops.forEach(pts=>emit(pts,c))});
  if(!prims.length)throw new Error('O DXF não tem desenhos legíveis (linhas, polilinhas, arcos ou textos).');
+ const B={v:1,prims,recs,types:raw.types,nModel:modelE.length,nPaper:paperE.length,usedPaper,layers:Object.fromEntries(Object.entries(layers).map(([k,L])=>[k,{name:L.name||k,color:L.color}])),xrefs:Object.entries(dxf.blocks||{}).filter(([n,b])=>b&&b.xrefPath).map(([n,b])=>b.xrefPath||n),legend:[]};
+ const legend=B.legend;try{const seen=new Set();for(const b of Object.values(dxf.blocks||{})){if(!b||!b.entities)continue;for(const e of b.entities){if(e.type!=='MTEXT'&&e.type!=='TEXT')continue;let tx=String(e.text||'');if(e.type==='MTEXT')tx=tx.replace(/\\P/g,'\n').replace(/\\[A-Za-z][^;]*;/g,'').replace(/[{}]/g,'');if(/\d+\s+UNIDADES?\b/i.test(tx)&&!seen.has(tx)){seen.add(tx);legend.push(tx)}}}}catch(err){}
+ return B}
+function dxfPrepare(text,pl){return dxfFinish(dxfBase(text),pl)}
+function dxfFinish(B,pl){
+ const prims=B.prims,recs=B.recs,layers=B.layers,raw={types:B.types},usedPaper=B.usedPaper;
  // caixa de cada elemento (para cortar o que está fora da tela) e extensão
  for(const q of prims){if(q.t==='l'){let a=1e308,b=1e308,c=-1e308,d2=-1e308;for(const v of q.p){if(v[0]<a)a=v[0];if(v[0]>c)c=v[0];if(v[1]<b)b=v[1];if(v[1]>d2)d2=v[1]}q.x0=a;q.y0=b;q.x1=c;q.y1=d2}
   }
@@ -547,16 +555,29 @@ function dxfPrepare(text,pl){
  const inserts=recs.map(r=>{let a=1e308,b=1e308,c=-1e308,d2=-1e308;const texts=[];for(let i=r.i0;i<r.i1;i++){const q=prims[i];if(!q)continue;if(q.x0<a)a=q.x0;if(q.y0<b)b=q.y0;if(q.x1>c)c=q.x1;if(q.y1>d2)d2=q.y1;if(q.t==='t')texts.push(q.s.replace(/\s+/g,' ').trim())}
   return a>c?null:{name:r.name,ly:r.ly,x0:a,y0:b,x1:c,y1:d2,attrs:r.attrs,texts,d:r.d,i0:r.i0,i1:r.i1}}).filter(Boolean);
  const SUP=new Set(['LINE','LWPOLYLINE','POLYLINE','CIRCLE','ARC','ELLIPSE','SPLINE','SOLID','3DFACE','LEADER','TEXT','MTEXT','INSERT','DIMENSION','HATCH','ATTDEF','POINT']);
- const xrefs=Object.entries(dxf.blocks||{}).filter(([n,b])=>b&&b.xrefPath).map(([n,b])=>b.xrefPath||n);
+ const xrefs=B.xrefs;
  const unsup=Object.entries(raw.types).filter(([t])=>!SUP.has(t)).sort((a,b)=>b[1]-a[1]);
- const diag={model:modelE.length,paper:paperE.length,usedPaper,xrefs,unsup,nprims:prims.length,types:raw.types};
+ const diag={model:B.nModel,paper:B.nPaper,usedPaper,xrefs,unsup,nprims:prims.length,types:raw.types};
  let rooms=[];try{rooms=findRooms(prims)}catch(e){console.warn('rooms',e)}
  let ds={dims:[],kinds:{},kc:{}};try{ds=ductScan(layers,prims)}catch(e){console.warn('duct',e)}
- const legend=[];try{const seen=new Set();for(const b of Object.values(dxf.blocks||{})){if(!b||!b.entities)continue;for(const e of b.entities){if(e.type!=='MTEXT'&&e.type!=='TEXT')continue;let tx=String(e.text||'');if(e.type==='MTEXT')tx=tx.replace(/\\P/g,'\n').replace(/\\[A-Za-z][^;]*;/g,'').replace(/[{}]/g,'');if(/\d+\s+UNIDADES?\b/i.test(tx)&&!seen.has(tx)){seen.add(tx);legend.push(tx)}}}}catch(err){}
- const R={legend,prims,x0:ext.x0,y0:ext.y0,w:ext.w,h:ext.h,inserts,texts:prims.filter(q=>q.t==='t'),nIns:recs.length,diag,clusters,rooms,dims:ds.dims,kinds:ds.kinds,kc:ds.kc};
+ const legend=B.legend;const R={legend,prims,x0:ext.x0,y0:ext.y0,w:ext.w,h:ext.h,inserts,texts:prims.filter(q=>q.t==='t'),nIns:recs.length,diag,clusters,rooms,dims:ds.dims,kinds:ds.kinds,kc:ds.kc};
  if(rooms.length)R.dims.forEach(m=>{m.room=roomOf(R,m.cx,m.cy)});
  return R;
 }
+/* ---------- Planta DXF "leve": desenho já processado (abre rápido, ocupa pouco) ---------- */
+function leanJSON(B,pav){
+ let a=1e308,b=-1e308,c=1e308,d=-1e308;for(const q of B.prims)if(q.t==='l'){const P=q.p;for(let i=0;i<P.length;i++){const x=P[i][0],y=P[i][1];if(x<a)a=x;if(x>b)b=x;if(y<c)c=y;if(y>d)d=y}}
+ const span=Math.max(b-a,d-c,1),stp=Math.pow(10,Math.floor(Math.log10(span/2e5))),dec=Math.max(0,-Math.floor(Math.log10(stp))),r=v=>+(Math.round(v/stp)*stp).toFixed(dec);
+ const L=[],li=new Map(),lx=n=>{let i=li.get(n);if(i==null){i=L.length;li.set(n,i);L.push(n)}return i};
+ const P=B.prims.map(q=>{if(q.t!=='l')return{...q,ly:lx(q.ly)};const f=new Array(q.p.length*2);for(let i=0;i<q.p.length;i++){f[2*i]=r(q.p[i][0]);f[2*i+1]=r(q.p[i][1])}return[q.c,lx(q.ly),f]});
+ return JSON.stringify({v:1,pav:pav||'',L,P,recs:B.recs,types:B.types,nModel:B.nModel,nPaper:B.nPaper,usedPaper:B.usedPaper,layers:B.layers,xrefs:B.xrefs,legend:B.legend})}
+async function gz(str){return await new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'))).blob()}
+async function leanRead(blob){
+ const j=JSON.parse(await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text());if(j.v!==1)throw new Error('formato');
+ const prims=j.P.map(q=>{if(!Array.isArray(q))return{...q,ly:j.L[q.ly]};const f=q[2],p=new Array(f.length>>1);for(let i=0;i<p.length;i++)p[i]=[f[2*i],f[2*i+1]];return{t:'l',p,c:q[0],ly:j.L[q[1]]}});
+ return{B:{v:1,prims,recs:j.recs,types:j.types,nModel:j.nModel,nPaper:j.nPaper,usedPaper:j.usedPaper,layers:j.layers,xrefs:j.xrefs,legend:j.legend},pav:j.pav||''}}
+async function leanSave(p,json){try{await blobSet(p.blobId+'_L',await gz(json))}catch(e){console.warn('lean',e)}}
+async function leanFromFile(p,file){if(p.tipo!=='dxf')return;try{await ensureDxf();const tx=await readText(file);const B=dxfBase(tx);let pv='';try{pv=detectPav(tx,[p.nome,file.name])}catch(e){}await leanSave(p,leanJSON(B,pv));return pv}catch(e){console.warn('lean',e)}}
 function dxfNote(d){
  $('#dxfnote')?.remove();if(!d||!d.diag)return;const g=d.diag,msg=[];
  if(g.xrefs.length)msg.push(`<b>Este DXF usa referências externas (XREF)</b>: ${g.xrefs.slice(0,4).map(esc).join(', ')}. O conteúdo delas <u>não está dentro do arquivo</u> e por isso não aparece. No AutoCAD: <i>XREF › selecione tudo › Vincular (Bind)</i> e salve o DXF de novo.`);
@@ -1378,7 +1399,7 @@ ACT.revPl=b=>{const p=planta(b.dataset.id);if(!p)return;p.revs=p.revs||[];const 
  formModal(`Nova revisão — ${p.nome}`,[{k:'file',l:`Arquivo da nova revisão (atual: revisão ${atual}) — PDF, DXF, PNG ou JPG`,type:'file',accept:'.pdf,.dxf,.png,.jpg,.jpeg'},{k:'nota',l:'O que mudou (opcional)'}],async v=>{
   if(!v.file){toast('Selecione o arquivo');return false}const tipo=fileTipo(v.file);if(!tipo){toast('Formato não suportado — use PDF, DXF, PNG ou JPG');return false}
   p.revs.push({rev:atual,blobId:p.blobId,tipo:p.tipo,ts:new Date().toISOString(),user:user||'',nota:p.nota||''});
-  p.blobId='pl_'+uid();await blobSet(p.blobId,v.file);p.tipo=tipo;p.paginas=0;{const used=new Set(p.revs.map(r=>r.rev));let n=p.revs.length,L;do{L=revLetra(n++)}while(used.has(L));p.rev=L}p.nota=v.nota||'';p.revAviso=true;delete docCache[p.id];
+  p.blobId='pl_'+uid();await blobSet(p.blobId,v.file);p.tipo=tipo;if(tipo==='dxf'){toast('Otimizando a planta…');await leanFromFile(p,v.file)}p.paginas=0;{const used=new Set(p.revs.map(r=>r.rev));let n=p.revs.length,L;do{L=revLetra(n++)}while(used.has(L));p.rev=L}p.nota=v.nota||'';p.revAviso=true;delete docCache[p.id];
   logH('editou','planta',p.id,`Nova revisão ${p.rev} da planta ${p.nome}`);save();render();toast(`Revisão ${p.rev} enviada. Os ${S.marcas.filter(m=>m.plantaId===p.id).length} ponto(s) foram mantidos — confira se continuam no lugar.`)},'Enviar revisão')};
 ACT.revList=b=>{const p=planta(b.dataset.id);if(!p)return;p.revs=p.revs||[];const atual=p.rev||revLetra(p.revs.length);
  openModal(`<h3>Revisões — ${esc(p.nome)}</h3><div class="doc-list"><div class="doc-r"><div class="grow"><b>Revisão ${atual} (em uso)</b><div class="muted">${p.tipo.toUpperCase()}${p.nota?' · '+esc(p.nota):''}</div></div></div>
@@ -1816,7 +1837,7 @@ ACT.edObra=b=>{const o=obra(b.dataset.id);formModal('Editar obra',[{k:'nome',l:'
 ACT.delObra=b=>{const o=obra(b.dataset.id);if(!confirm(`Excluir a obra "${o.nome}" com TODOS os projetos, plantas, itens e conferências?`))return;S.projetos.filter(p=>p.obraId===o.id).forEach(p=>delProjeto(p.id));S.obras=S.obras.filter(x=>x.id!==o.id);logH('excluiu','obra',o.id,'Excluiu obra '+o.nome);if(ui.obraId===o.id){ui.obraId='';ui.projetoId='';ui.plantaId=''}save();render()};
 ACT.addProj=()=>formModal('Novo projeto',[{k:'nome',l:'Nome do projeto'}],v=>{if(!v.nome)return false;const p={id:uid(),obraId:ui.obraId,nome:v.nome};S.projetos.push(p);ui.projetoId=p.id;logH('criou','projeto',p.id,'Criou projeto '+v.nome);save();render()});
 ACT.edProj=b=>{const p=proj(b.dataset.id);formModal('Editar projeto',[{k:'nome',l:'Nome',value:p.nome}],v=>{if(!v.nome)return false;logH('editou','projeto',p.id,`Renomeou projeto ${p.nome} → ${v.nome}`);p.nome=v.nome;save();render()})};
-function delProjeto(id){projItens(id).forEach(i=>delItemById(i.id));S.plantas.filter(p=>p.projetoId===id).forEach(p=>{blobDel(p.blobId);delete docCache[p.id]});S.marcas=S.marcas.filter(m=>planta(m.plantaId)&&planta(m.plantaId).projetoId!==id);S.plantas=S.plantas.filter(p=>p.projetoId!==id);S.projetos=S.projetos.filter(p=>p.id!==id)}
+function delProjeto(id){projItens(id).forEach(i=>delItemById(i.id));S.plantas.filter(p=>p.projetoId===id).forEach(p=>{blobDel(p.blobId);blobDel(p.blobId+'_L');delete docCache[p.id]});S.marcas=S.marcas.filter(m=>planta(m.plantaId)&&planta(m.plantaId).projetoId!==id);S.plantas=S.plantas.filter(p=>p.projetoId!==id);S.projetos=S.projetos.filter(p=>p.id!==id)}
 ACT.delProj=b=>{const p=proj(b.dataset.id);if(!confirm(`Excluir o projeto "${p.nome}" com plantas, itens e conferências?`))return;delProjeto(p.id);logH('excluiu','projeto',p.id,'Excluiu projeto '+p.nome);if(ui.projetoId===p.id){ui.projetoId='';ui.plantaId=''}save();render()};
 const fileTipo=f=>{if(/\.dwg$/i.test(f.name)){toast('DWG não é suportado: no AutoCAD use SALVAR COMO › DXF (ou exporte em PDF)');return null}return /\.dxf$/i.test(f.name)?'dxf':/pdf$/i.test(f.type)||/\.pdf$/i.test(f.name)?'pdf':/^image\//.test(f.type)?'img':null};
 /* ---------- Pavimento lido do desenho (carimbo, textos, nome do arquivo) ---------- */
@@ -1850,11 +1871,11 @@ ACT.addPl=()=>formModal('Enviar planta',[{k:'nome',l:'Nome da planta (ex.: Clima
  if(!v.file){toast('Selecione o arquivo da planta');return false}const tipo=fileTipo(v.file);if(!tipo){toast('Formato não suportado — use PDF, DXF, PNG ou JPG');return false}
  const p={id:uid(),projetoId:ui.projetoId,nome:v.nome||v.file.name.replace(/\.[^.]+$/,''),pav:v.pav,disc:v.disc,tipo,blobId:'pl_'+uid()};
  let auto='';if(!p.pav){try{auto=detectPav(tipo==='dxf'?await readText(v.file):'',[v.nome,v.file.name])}catch(e){}if(auto)p.pav=auto}
- await blobSet(p.blobId,v.file);S.plantas.push(p);logH('criou','planta',p.id,'Enviou planta '+p.nome);save();render();toast(auto?'Planta enviada · pavimento identificado: '+auto:'Planta enviada')},'Enviar');
+ await blobSet(p.blobId,v.file);if(tipo==='dxf'){toast('Otimizando a planta…');const pv=await leanFromFile(p,v.file);if(!p.pav&&pv){p.pav=pv;auto=pv}}S.plantas.push(p);logH('criou','planta',p.id,'Enviou planta '+p.nome);save();render();toast(auto?'Planta enviada · pavimento identificado: '+auto:'Planta enviada')},'Enviar');
 ACT.edPl=b=>{const p=planta(b.dataset.id);formModal('Editar planta',[{k:'nome',l:'Nome',value:p.nome},{k:'pav',l:'Pavimento',value:p.pav,list:PAVS},{k:'disc',l:'Disciplina',value:p.disc,list:DISCIPLINAS},{k:'file',l:'Substituir arquivo (opcional)',type:'file',accept:'.pdf,.dxf,image/*'}],async v=>{
- if(v.file){const t=fileTipo(v.file);if(!t){toast('Formato não suportado');return false}await blobSet(p.blobId,v.file);p.tipo=t;p.paginas=0;delete docCache[p.id]}
+ if(v.file){const t=fileTipo(v.file);if(!t){toast('Formato não suportado');return false}await blobSet(p.blobId,v.file);p.tipo=t;p.paginas=0;delete docCache[p.id];blobDel(p.blobId+'_L');if(t==='dxf'){toast('Otimizando a planta…');await leanFromFile(p,v.file)}}
  p.nome=v.nome||p.nome;p.disc=v.disc;p.pav=v.pav;if(!p.pav&&v.file&&p.tipo==='dxf'){try{pavApply(p,detectPav(await readText(v.file),[p.nome,v.file.name]))}catch(e){}}logH('editou','planta',p.id,'Editou planta '+p.nome);save();render()})};
-ACT.delPl=b=>{const p=planta(b.dataset.id);if(!confirm(`Excluir a planta "${p.nome}"? Os pontos nela serão removidos (os itens continuam cadastrados).`))return;blobDel(p.blobId);delete docCache[p.id];S.marcas=S.marcas.filter(m=>m.plantaId!==p.id);S.plantas=S.plantas.filter(x=>x.id!==p.id);logH('excluiu','planta',p.id,'Excluiu planta '+p.nome);save();render()};
+ACT.delPl=b=>{const p=planta(b.dataset.id);if(!confirm(`Excluir a planta "${p.nome}"? Os pontos nela serão removidos (os itens continuam cadastrados).`))return;blobDel(p.blobId);blobDel(p.blobId+'_L');delete docCache[p.id];S.marcas=S.marcas.filter(m=>m.plantaId!==p.id);S.plantas=S.plantas.filter(x=>x.id!==p.id);logH('excluiu','planta',p.id,'Excluiu planta '+p.nome);save();render()};
 ACT.posPl=b=>openPlanta(b.dataset.id);
 
 /* ----- Backup / pacotes ----- */
@@ -1890,7 +1911,8 @@ async function packObras(obraIds,leve){
  const plantas=S.plantas.filter(p=>pids.includes(p.projetoId)),itens=S.itens.filter(i=>pids.includes(i.projetoId)),iids=new Set(itens.map(i=>i.id));
  const marcas=S.marcas.filter(m=>iids.has(m.itemId)),conf={};iids.forEach(i=>{if(S.conf[i])conf[i]=S.conf[i]});
  if(leve)Object.keys(conf).forEach(k=>{conf[k]={...conf[k],fotos:[]}});
- const bl={};for(const id of (leve?plantas.map(p=>p.blobId):[...plantas.flatMap(p=>[p.blobId,...(p.revs||[]).map(r=>r.blobId)]),...itens.flatMap(i=>(i.docs||[]).map(d=>d.blobId)),...Object.values(conf).flatMap(c=>c.fotos)])){const b=await blobGet(id);if(b)bl[id]=await blobToDataURL(b)}
+ const bl={};if(leve)for(const p of plantas){if(p.tipo==='dxf'){let L=await blobGet(p.blobId+'_L');if(!L){const rb=await blobGet(p.blobId);if(rb){await leanFromFile(p,rb);L=await blobGet(p.blobId+'_L')}}if(L){bl[p.blobId+'_L']=await blobToDataURL(L);continue}}const b=await blobGet(p.blobId);if(b)bl[p.blobId]=await blobToDataURL(b)}
+ for(const id of (leve?[]:[...plantas.flatMap(p=>[p.blobId,...(p.revs||[]).map(r=>r.blobId)]),...itens.flatMap(i=>(i.docs||[]).map(d=>d.blobId)),...Object.values(conf).flatMap(c=>c.fotos)])){const b=await blobGet(id);if(b)bl[id]=await blobToDataURL(b)}
  return {formato:'conferencia-hvac',versao:1,exportado:new Date().toISOString(),obras:S.obras.filter(o=>obraIds.includes(o.id)),projetos,plantas,itens,marcas,conf,pend:(S.pend||[]).filter(x=>iids.has(x.itemId)),aceites:(S.aceites||[]).filter(a=>pids.includes(a.projetoId)),modelos:S.modelos||[],blobs:bl,hist:leve?[]:S.hist.filter(h=>iids.has(h.ref)||pids.includes(h.ref)||obraIds.includes(h.ref))}}
 ACT.expObra=async()=>{const id=$('#expObra').value;if(!id)return toast('Cadastre uma obra primeiro');toast('Gerando arquivo…');const p=await packObras([id]);download(`obra_${normT(obra(id).nome)||'obra'}.json`,JSON.stringify(p),'application/json')};
 ACT.pubObras=async()=>{const ids=$$('[data-pub]:checked').map(e=>e.dataset.pub);if(!ids.length)return toast('Marque ao menos uma obra');toast('Preparando arquivo…');
@@ -1995,7 +2017,7 @@ async function loadObrasFile(){
   for(const [id,c] of Object.entries(j.conf||{})){const l=S.conf[id];if(!l||(c.data||'')>(l.data||''))S.conf[id]={...c,fotos:(l&&l.fotos)||[]}}
   if(j.gerado)localStorage.setItem('orcehvac.conf.pubGer',j.gerado);
   await kvSet('state',S);pick()}catch{pick()}}
-async function ensureLoaded(){if(loaded)return true;try{const saved=await kvGet();if(saved)S={...S,...saved};S.cfg=S.cfg||{};S.del=S.del||{};S.usuarios=S.usuarios||[];resetSigs();loaded=true;await loadUserFile();await loadModelFile();await loadObrasFile();initSync();return true}catch(e){toast('Não foi possível ler os dados do comissionamento: '+e.message);return false}}
+async function ensureLoaded(){if(loaded)return true;try{const saved=await kvGet();if(saved)S={...S,...saved};S.cfg=S.cfg||{};S.del=S.del||{};S.usuarios=S.usuarios||[];(S.itens||[]).forEach(i=>{if(i.cat==='fancolete'&&/^FL-\d+$/i.test(String(i.campos?.tag||'')))i.campos.tag=i.campos.tag.replace(/^FL/i,'FCTH')});resetSigs();loaded=true;await loadUserFile();await loadModelFile();await loadObrasFile();initSync();return true}catch(e){toast('Não foi possível ler os dados do comissionamento: '+e.message);return false}}
 function mount(){
  const c=document.getElementById('content');root=document.createElement('div');root.className='cf';
  root.innerHTML='<section class="heading" id="cfHead"></section><nav class="module-tabs" id="cfNav"></nav><div id="cfKpi"></div><div id="cfMain"></div><div id="cfModal"></div>';
