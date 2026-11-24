@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.10.1';
+const APP_VERSION='0.10.2';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -1851,7 +1851,7 @@ const sbSave=v=>{sbSess=v;try{v?localStorage.setItem(SBK,JSON.stringify(v)):loca
 const outbox=()=>{try{return JSON.parse(localStorage.getItem(OBX)||'[]')}catch{return[]}};
 const setOutbox=a=>{try{localStorage.setItem(OBX,JSON.stringify([...new Set(a)]))}catch{}};
 const sbInfo={t:'',err:'',busy:false};
-const SB_DOM='@artech-obra.com',sbMail=u=>{u=String(u||'').trim().toLowerCase();if(u.includes('@'))return u;return u.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9._-]+/g,'.').replace(/^\.+|\.+$/g,'')+SB_DOM};
+const SB_DOM='@artechba.com.br',sbMail=u=>{u=String(u||'').trim().toLowerCase();if(u.includes('@'))return u;return u.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9._-]+/g,'.').replace(/^\.+|\.+$/g,'')+SB_DOM};
 async function sbAuth(grant,body){
  const r=await fetch(SB.url+'/auth/v1/token?grant_type='+grant,{method:'POST',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify(body)});
  const j=await r.json().catch(()=>({}));
