@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.9.3';
+const APP_VERSION='0.9.4';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -91,8 +91,9 @@ function same(k,a,b){a=String(a??'').trim();b=String(b??'').trim();if(!a||!b)ret
  if(TOLK.includes(k)){const x=nums(a),y=nums(b);if(x.length===1&&y.length===1)return y[0]>=x[0]-1e-9&&y[0]<=x[0]*(1+TOLS[k])+1e-9}
  if(F[k].num){const x=nums(a),y=nums(b);if(x.length&&y.length)return x.length===y.length&&x.every((v,i)=>v===y[i])}
  return normT(a)===normT(b)}
+const CF_KEYS=['modelo','vazao','vazaoagua','dimensoes'],CK=cat=>cat.conf.filter(k=>CF_KEYS.includes(k)),CHK_ON=false;
 function diverg(id){const it=item(id),c=S.conf[id];if(!it||!c)return[];
- return CATS[it.cat].conf.filter(k=>{const pv=(it.campos[k]||'').trim();return pv&&!same(k,pv,c.campos[k]||'')})}
+ return CK(CATS[it.cat]).filter(k=>{const pv=(it.campos[k]||'').trim();return pv&&!same(k,pv,c.campos[k]||'')})}
 function statusOf(id){const c=S.conf[id];if(!c)return 'pendente';if(c.estado!=='finalizada')return 'em_conferencia';return (diverg(id).length||chkFails(id).length)?'divergente':'conferido'}
 const projItens=pid=>S.itens.filter(i=>i.projetoId===pid);
 function scopeItens(){let l=ui.projetoId?projItens(ui.projetoId):ui.obraId?S.itens.filter(i=>proj(i.projetoId)?.obraId===ui.obraId):[];if(ui.projetoId&&ui.pav)l=l.filter(i=>pavLabel(i)===ui.pav);return l}
@@ -840,9 +841,9 @@ let RET=null;
 async function openConf(id,draft){
  const it=item(id);if(!it)return;const cat=CATS[it.cat];
  const c=S.conf[id];
- const d={campos:{...(c?.campos||{})},obs:c?.obs||'',fotos:[...(c?.fotos||[])],assin:c?.assin||'',chk:chkMerge(c?.chk?JSON.parse(JSON.stringify(c.chk)):null,modeloDe(it.cat)),added:[],removed:[]};
+ const d={campos:{...(c?.campos||{})},obs:c?.obs||'',fotos:[...(c?.fotos||[])],assin:c?.assin||'',chk:c?.chk||undefined,added:[],removed:[]};
  if(draft)Object.assign(d,draft);
- const REQ=['modelo','fabricante','tipo'].filter(k=>cat.conf.includes(k));
+ const CKS=CK(cat);const REQ=['modelo'].filter(k=>CKS.includes(k));
  REQ.forEach(k=>{if(!c||!(k in (c.campos||{})))d.campos[k]=(it.campos[k]||'').trim()});
  const fin=c?.estado==='finalizada';
  const pl=plantasDoItem(id).join(', ');
@@ -854,22 +855,16 @@ async function openConf(id,draft){
    <div class="panel proj"><h4>📘 Informações do projeto <span class="muted">(somente leitura)</span></h4>
     ${cat.proj.map(k=>`<div class="pr"><label>${F[k].l}</label><div class="v" id="pv_${k}">${esc(it.campos[k]||'—')}</div></div>`).join('')}</div>
    <div class="panel obra"><h4>🏗 Informações encontradas na obra</h4>
-    ${cat.conf.map(k=>`<div class="pr"><label>${F[k].l}${REQ.includes(k)?' <b style="color:#b42318" title="Obrigatório">*</b>':''}${TOLK.includes(k)?` <small class="muted" title="Valor igual ao projeto ou até ${Math.round(TOLS[k]*100)}% acima é considerado conferido">(até +${Math.round(TOLS[k]*100)}%)</small>`:''}</label><input type="text" data-k="${k}" id="cf_${k}" value="${esc(d.campos[k]||'')}" placeholder="${it.campos[k]?'Projeto: '+esc(it.campos[k]):REQ.includes(k)?'Obrigatório — informe o que foi encontrado':''}" ${REQ.includes(k)?'required':''} autocomplete="off"></div>`).join('')}
+    ${CKS.map(k=>`<div class="pr"><label>${F[k].l}${REQ.includes(k)?' <b style="color:#b42318" title="Obrigatório">*</b>':''}${TOLK.includes(k)?` <small class="muted" title="Valor igual ao projeto ou até ${Math.round(TOLS[k]*100)}% acima é considerado conferido">(até +${Math.round(TOLS[k]*100)}%)</small>`:''}</label><input type="text" data-k="${k}" id="cf_${k}" value="${esc(d.campos[k]||'')}" placeholder="${it.campos[k]?'Projeto: '+esc(it.campos[k]):REQ.includes(k)?'Obrigatório — informe o que foi encontrado':''}" ${REQ.includes(k)?'required':''} autocomplete="off"></div>`).join('')}
     ${REQ.length?'<p class="muted" style="margin:0 0 8px;font-size:12px"><b style="color:#b42318">*</b> Obrigatórios: já vêm preenchidos com o que está no projeto. Confira na obra e <b>corrija</b> o que for diferente.</p>':''}
     <div class="pr"><label>Observações ${micBtn('cf_obs')}</label><textarea id="cf_obs">${esc(d.obs)}</textarea></div>
-    ${chkHTML(d.chk,it)}
-    <div class="pr"><label>Assinatura do engenheiro${cfg().assinObrig?' <b style="color:#b42318" title="Obrigatória">*</b>':''}</label><canvas id="cf_sig" class="sigpad"></canvas><div class="sig-foot"><span class="muted">${esc(user||'')}</span><button class="btn sec sm" type="button" data-act="sigClear">Limpar assinatura</button></div></div>
-    <div class="pr"><label>Fotografias do equipamento instalado</label>
-     <input type="file" id="cf_foto" accept="image/*" multiple capture="environment" style="display:none">
-     <button class="btn sec sm" type="button" data-act="pickFoto">📷 Adicionar foto</button>
-     <div class="photos">${d.fotos.map((f,i)=>`<div class="ph"><img src="${urls[i]}" data-act="bigFoto" data-u="${i}"><button data-act="rmFoto" data-i="${i}" title="Remover">×</button><button class="mkb" data-act="markFoto" data-i="${i}" title="Marcar na foto (círculo, seta, caneta)">✏</button></div>`).join('')}</div></div>
    </div></div>
   <p class="muted" style="margin-bottom:0">${c?`Última gravação: ${fdt(c.data)} por ${esc(c.resp||'')}`:'Ainda não conferido.'}</p>
   <div class="mfoot"><button class="btn sec" data-act="confCancel">Fechar sem salvar</button><button class="btn" style="background:var(--azul)" data-act="confSave">💾 Salvar e continuar depois</button><button class="btn" style="background:var(--verde)" data-act="confFinal">✔ Finalizar conferência</button></div>`,true);
-  cat.conf.forEach(k=>liveCmp(k));SG=sigPad($('#cf_sig'),d.assin);
-  $('#cf_foto').onchange=async e=>{harvest();for(const f of e.target.files){const b=await compress(f);const bid='ph_'+uid();await blobSet(bid,b);d.fotos.push(bid);d.added.push(bid)}draw()};
+  CKS.forEach(k=>liveCmp(k));
+  if($('#cf_foto'))$('#cf_foto').onchange=async e=>{harvest();for(const f of e.target.files){const b=await compress(f);const bid='ph_'+uid();await blobSet(bid,b);d.fotos.push(bid);d.added.push(bid)}draw()};
  };
- const harvest=()=>{cat.conf.forEach(k=>{const e=$('#cf_'+k);if(e)d.campos[k]=e.value.trim()});const o=$('#cf_obs');if(o)d.obs=o.value;if(SG&&$('#cf_sig'))d.assin=SG.get();$$('[data-ck]',$('#cfModal')).forEach(e=>{const l=d.chk&&d.chk.linhas.find(x=>x.id===e.dataset.ck);if(l)l.v=e.value})};
+ const harvest=()=>{CKS.forEach(k=>{const e=$('#cf_'+k);if(e)d.campos[k]=e.value.trim()});const o=$('#cf_obs');if(o)d.obs=o.value;$$('[data-ck]',$('#cfModal')).forEach(e=>{const l=d.chk&&d.chk.linhas.find(x=>x.id===e.dataset.ck);if(l)l.v=e.value})};
  const liveCmp=k=>{const e=$('#cf_'+k),v=$('#pv_'+k);if(!e||!v)return;const pv=(it.campos[k]||'').trim(),fv=e.value.trim();
   const cls=!pv||!fv?'':same(k,pv,fv)?'ok':'bad';e.className=cls;v.className='v '+cls};
  const done=async(final)=>{
@@ -878,13 +873,13 @@ async function openConf(id,draft){
   if(final){
    const miss=REQ.filter(k=>!(d.campos[k]||'').trim());
    if(miss.length){toast('Preencha os campos obrigatórios: '+miss.map(k=>F[k].l).join(', '));const e=$('#cf_'+miss[0]);if(e){e.classList.add('bad');e.focus()}return}
-   if(cfg().assinObrig&&!d.assin){toast('Assine antes de finalizar a conferência');return}
-   {const un=(d.chk?.linhas||[]).filter(l=>chkRes(l,it)==='');if(un.length){toast('Responda todo o checklist ('+un.length+' linha(s) sem resposta)');return}}
-   const empt=cat.conf.filter(k=>(it.campos[k]||'').trim()&&!(d.campos[k]||'').trim());
+   
+   {const un=CHK_ON?(d.chk?.linhas||[]).filter(l=>chkRes(l,it)===''):[];if(un.length){toast('Responda todo o checklist ('+un.length+' linha(s) sem resposta)');return}}
+   const empt=CKS.filter(k=>(it.campos[k]||'').trim()&&!(d.campos[k]||'').trim());
    if(empt.length&&!confirm('Campos sem preenchimento serão considerados DIVERGENTES:\n- '+empt.map(k=>F[k].l).join('\n- ')+'\n\nFinalizar mesmo assim?'))return;
   }
   d.removed.forEach(blobDel);
-  S.conf[id]={campos:d.campos,obs:d.obs,fotos:d.fotos,assin:d.assin||'',chk:d.chk||undefined,estado:final?'finalizada':'rascunho',resp:user,data:new Date().toISOString()};
+  S.conf[id]={campos:d.campos,obs:d.obs,fotos:d.fotos,assin:c?.assin||'',chk:d.chk||undefined,estado:final?'finalizada':'rascunho',resp:user,data:new Date().toISOString()};
   if(final)pendSync(id);
   logH('conferiu','conferencia',id,`${final?'Finalizou':'Salvou rascunho da'} conferência de ${it.campos.tag}`);
   save();modalCleanup=null;SG=null;closeModal();refreshAfterConf();
@@ -1094,7 +1089,7 @@ function repItem(i){
  const s=statusOf(i.id),c=S.conf[i.id],cat=CATS[i.cat],dv=diverg(i.id);
  return `<div class="rep-item"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:16px">${esc(i.campos.tag)}</b><span class="muted">${cat.l} · ${esc(pavLabel(i))} · ${esc(plantasDoItem(i.id).join(', ')||'sem ponto em planta')}</span><span class="chip s-${s}">${ST[s]}</span></div>
  <table style="margin-top:6px"><thead><tr><th>Campo</th><th>Previsto (projeto)</th><th>Encontrado (obra)</th><th></th></tr></thead><tbody>
- ${cat.conf.map(k=>{const pv=i.campos[k]||'',fv=c?.campos[k]||'';const bad=dv.includes(k);const ok=c&&pv&&fv&&!bad;
+ ${CK(cat).map(k=>{const pv=i.campos[k]||'',fv=c?.campos[k]||'';const bad=dv.includes(k);const ok=c&&pv&&fv&&!bad;
   return `<tr><td>${F[k].l}</td><td>${esc(pv||'—')}</td><td class="${bad?'bad-td':ok?'ok-td':''}">${c?esc(fv||'—'):'—'}</td><td>${bad?'✗ divergente':ok?'✓':''}</td></tr>`}).join('')}</tbody></table>
  ${chkRep(i)}
  ${dv.length?`<div style="margin-top:6px"><b style="color:var(--verm)">Divergências:</b> ${dv.map(k=>`${F[k].l} (previsto ${esc(i.campos[k])} × encontrado ${esc(c.campos[k]||'—')})`).join('; ')}</div>`:''}
@@ -1106,7 +1101,7 @@ function repItem(i){
  ${c?`<div class="muted" style="margin-top:4px">Conferido por ${esc(c.resp||'—')} em ${fdt(c.data)}${c.estado!=='finalizada'?' (rascunho — não finalizada)':''}</div>`:''}</div>`}
 ACT.print=async()=>{const d=desk();if(d){try{const r=await d({action:'print-pdf',name:'Relatorio-conferencia'});if(r)toast('PDF salvo.')}catch(e){toast(e.message)}}else window.print()};
 function repRows(){const list=filteredItens();const rows=[['Obra','Projeto','Pavimento','Planta','Categoria','TAG','Status','Campo','Previsto','Encontrado','Divergente','Observações','Responsável','Data']];
- list.forEach(i=>{const c=S.conf[i.id],dv=diverg(i.id);CATS[i.cat].conf.forEach(k=>rows.push([obra(ui.obraId).nome,proj(ui.projetoId).nome,pavLabel(i),plantasDoItem(i.id).join('/'),CATS[i.cat].l,i.campos.tag,ST[statusOf(i.id)],F[k].l,i.campos[k]||'',c?.campos[k]||'',dv.includes(k)?'SIM':'',c?.obs||'',c?.resp||'',c?fdt(c.data):'']));(c?.chk?.linhas||[]).forEach(l=>{const r=chkRes(l,i);rows.push([obra(ui.obraId).nome,proj(ui.projetoId).nome,pavLabel(i),plantasDoItem(i.id).join('/'),CATS[i.cat].l,i.campos.tag,ST[statusOf(i.id)],'Checklist: '+l.t,l.ref?(i.campos[l.ref]||''):(l.esp||''),l.tipo==='sn'?(({ok:'OK',nok:'Não',na:'N/A'})[r]||''):(l.v||''),r==='nok'?'SIM':'',c?.obs||'',c?.resp||'',fdt(c.data)])})});return rows}
+ list.forEach(i=>{const c=S.conf[i.id],dv=diverg(i.id);CK(CATS[i.cat]).forEach(k=>rows.push([obra(ui.obraId).nome,proj(ui.projetoId).nome,pavLabel(i),plantasDoItem(i.id).join('/'),CATS[i.cat].l,i.campos.tag,ST[statusOf(i.id)],F[k].l,i.campos[k]||'',c?.campos[k]||'',dv.includes(k)?'SIM':'',c?.obs||'',c?.resp||'',c?fdt(c.data):'']));(c?.chk?.linhas||[]).forEach(l=>{const r=chkRes(l,i);rows.push([obra(ui.obraId).nome,proj(ui.projetoId).nome,pavLabel(i),plantasDoItem(i.id).join('/'),CATS[i.cat].l,i.campos.tag,ST[statusOf(i.id)],'Checklist: '+l.t,l.ref?(i.campos[l.ref]||''):(l.esp||''),l.tipo==='sn'?(({ok:'OK',nok:'Não',na:'N/A'})[r]||''):(l.v||''),r==='nok'?'SIM':'',c?.obs||'',c?.resp||'',fdt(c.data)])})});return rows}
 ACT.xlsExp=async()=>{if(!await ensureXlsx())return toast('Biblioteca Excel indisponível');const ws=XLSX.utils.aoa_to_sheet(repRows());ws['!cols']=[22,18,14,16,12,12,14,22,20,20,10,30,16,18].map(w=>({wch:w}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Conferência');XLSX.writeFile(wb,'relatorio_conferencia.xlsx')};
 ACT.csvExp=()=>{const q=v=>`"${String(v??'').replace(/"/g,'""')}"`;download('relatorio_conferencia.csv','\ufeff'+repRows().map(r=>r.map(q).join(';')).join('\n'),'text/csv')};
 
@@ -1470,7 +1465,7 @@ function chkRes(l,it){
  if(l.ref&&String(it.campos[l.ref]||'').trim())return same(l.ref,it.campos[l.ref],l.v)?'ok':'nok';
  if(String(l.esp??'').trim()&&nums(l.esp).length&&v.length){const e=nums(l.esp)[0],t=(+l.tol||5)/100;return(v[0]>=e*(1-t)-1e-9&&v[0]<=e*(1+t)+1e-9)?'ok':'nok'}
  return 'ok'}
-const chkFails=id=>{const c=S.conf[id],it=item(id);return it&&c&&c.chk?c.chk.linhas.filter(l=>chkRes(l,it)==='nok'):[]};
+const chkFails=id=>{const c=S.conf[id],it=item(id);return CHK_ON&&it&&c&&c.chk?c.chk.linhas.filter(l=>chkRes(l,it)==='nok'):[]};
 function chkMerge(chk,mod){ // atualiza as linhas com o modelo atual, mantendo respostas
  if(!mod)return chk;
  if(!chk||chk.modeloId!==mod.id)return{modeloId:mod.id,nome:mod.nome,linhas:mod.linhas.map(l=>({...l,r:'',v:'',n:''}))};
