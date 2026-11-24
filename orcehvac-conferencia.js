@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.10.3';
+const APP_VERSION='0.10.4';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -1685,7 +1685,7 @@ function showLogin(then){
   if(step==='type'){const f=async()=>{const now=Date.now();if(now<lockUntil)return err('Muitas tentativas. Aguarde '+Math.ceil((lockUntil-now)/1000)+' s.');
     const em=sbMail(q('#tl_u').value),pw=q('#tl_p').value;keep=q('#tl_keep').checked;if(!q('#tl_u').value.trim()||!pw)return err('Digite o usuário e a senha.');
     const b=q('#tl_go');b.disabled=true;b.textContent='Entrando…';
-    try{await sbAuth('password',{email:em,password:pw});b.disabled=false;go(sbUser());return}
+    try{await sbAuth('password',{email:em,password:pw});await sbPerfil();b.disabled=false;go(sbUser());return}
     catch(e){b.disabled=false;b.textContent='Entrar';fails++;if(fails>=5){fails=0;lockUntil=Date.now()+30000;return err('Muitas tentativas. Aguarde 30 s.')}
      err(e.status?e.message.replace('E-mail ou senha incorretos.','Usuário ou senha incorretos.'):'Sem conexão com a internet. Conecte e tente de novo.');q('#tl_p').select()}};
    q('#tl_go').onclick=f;q('#tl_p').onkeydown=e=>{if(e.key==='Enter')f()};q('#tl_u').onkeydown=e=>{if(e.key==='Enter')q('#tl_p').focus()};setTimeout(()=>q('#tl_u')?.focus(),40);
@@ -1862,6 +1862,7 @@ async function sbToken(){if(!sbSess)return null;if(Date.now()<sbSess.exp)return 
 async function sbReq(path,opt){const t=await sbToken();if(!t)throw new Error('Não conectado à nuvem');
  const r=await fetch(SB.url+path,{...opt,headers:{apikey:SB.key,Authorization:'Bearer '+t,'Content-Type':'application/json',...((opt&&opt.headers)||{})}});
  if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.hint||('erro '+r.status))}return r}
+async function sbPerfil(){if(!sbSess)return;try{const r=await sbReq('/rest/v1/perfis?select=papel&email=eq.'+encodeURIComponent((sbSess.email||'').toLowerCase())+'&limit=1');const j=await r.json();if(j&&j[0]&&j[0].papel)sbSave({...sbSess,papel:j[0].papel})}catch{}}
 async function sbPull(){
  const last=localStorage.getItem(SBL)||'';let ch=0,max=last;
  const r=await sbReq('/rest/v1/conferencias?select=item_id,dados,atualizado_em&order=atualizado_em.asc&limit=5000'+(last?'&atualizado_em=gt.'+encodeURIComponent(last):''));
@@ -1889,11 +1890,11 @@ function cloudHTML(){if(!sbSess)return desk()?`<span id="cfCloud" class="muted" 
  const n=outbox().length;const t=n?`⏳ ${n} aguardando envio`:sbInfo.err?`⚠ ${esc(sbInfo.err)}`:sbInfo.t?`☁ sincronizado ${new Date(sbInfo.t).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`:'☁ conectado';
  return `<span id="cfCloud" class="muted" style="font-size:12px" title="Conferências enviadas à nuvem">${t}</span>`}
 let sbTimer=0;
-function sbStart(){if(sbTimer||!sbSess)return;sbKick();sbTimer=setInterval(()=>sbSync(false),60000);window.addEventListener('online',()=>sbSync(false))}
+function sbStart(){if(sbTimer||!sbSess)return;sbPerfil();sbKick();sbTimer=setInterval(()=>sbSync(false),60000);window.addEventListener('online',()=>sbSync(false))}
 ACT.cloudLogin=()=>{openModal(`<h3>☁ Conectar à nuvem</h3><p class="muted">Use o usuário e a senha criados para o escritório no Supabase (pode digitar só o usuário ou o e-mail completo). Assim as conferências dos engenheiros chegam aqui.</p><div class="fld"><label>Usuário</label><input id="cl_e" type="text" autocomplete="username" autocapitalize="none"></div><div class="fld"><label>Senha</label><input id="cl_p" type="password" autocomplete="current-password"></div><div id="cl_err" class="lg-err"></div>
  <div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" data-act="cloudGo">Conectar</button></div>`)};
 ACT.cloudGo=async()=>{const e=$('#cl_e').value.trim(),p=$('#cl_p').value;if(!e||!p){$('#cl_err').textContent='Digite e-mail e senha.';return}
- try{await sbAuth('password',{email:sbMail(e),password:p});closeModal();sbStart();await sbSync(true);render()}catch(x){$('#cl_err').textContent=x.message}};
+ try{await sbAuth('password',{email:sbMail(e),password:p});await sbPerfil();closeModal();sbStart();await sbSync(true);render()}catch(x){$('#cl_err').textContent=x.message}};
 ACT.cloudNow=()=>sbSync(true);
 ACT.cloudOff=()=>{if(!confirm('Desconectar da nuvem neste computador? As conferências já recebidas continuam aqui.'))return;sbSave(null);clearInterval(sbTimer);sbTimer=0;render()};
 function cloudCard(){return `<div class="card"><h3>☁ Nuvem: conferências dos engenheiros</h3><p>Quando o engenheiro finaliza ou salva uma conferência no tablet, ela é enviada à nuvem (Supabase). Aqui você recebe e acompanha o andamento. Sem internet no campo, o tablet guarda e envia depois.</p>${sbSess?`<p>Conectado como <b>${esc((sbSess.email||'').replace(SB_DOM,''))}</b> ${cloudHTML()}</p><div class="row"><button class="btn" data-act="cloudNow" style="flex:none">🔄 Buscar agora</button><button class="btn red" data-act="cloudOff" style="flex:none">Desconectar</button></div>`:`<div class="row"><button class="btn" data-act="cloudLogin" style="flex:none">☁ Conectar à nuvem</button></div>`}</div>`}
