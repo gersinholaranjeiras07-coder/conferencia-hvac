@@ -1,0 +1,30 @@
+{
+ "v": 1,
+ "gerado": "2026-11-24T13:23:49.699Z",
+ "usuarios": [
+  {
+   "id": "wql7y4fmwt8s35k",
+   "nome": "Gerson",
+   "papel": "Administrador",
+   "s": "270efb09a91dae2b",
+   "h": "4e6b4d02bc9286448852a68eb7ced69b24fb8c42f9129a54ce99f2ca56767db3",
+   "_u": "2026-11-24T12:37:48.265Z"
+  },
+  {
+   "id": "99g66rymwuq6ih3",
+   "nome": "Laio",
+   "papel": "Administrador",
+   "s": "3e97afe824606b60",
+   "h": "0aac41980056626648e16731b2207f6d3dc1b1db2ffb62813ccf29614b68dc2c",
+   "_u": "2026-11-24T13:23:24.104Z"
+  },
+  {
+   "id": "4144xojmwuq6ttj",
+   "nome": "Gabriel",
+   "papel": "Engenheiro (campo)",
+   "s": "f6ff600c781cb31e",
+   "h": "9996ae433951bc02df5717cf1ce018e78ea1be5c1d6a7c4f13888ca75102ec90",
+   "_u": "2026-11-24T13:23:38.781Z"
+  }
+ ]
+}
