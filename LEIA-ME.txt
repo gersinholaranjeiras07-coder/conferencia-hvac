@@ -1,0 +1,26 @@
+Comissionamento de obra (Artech) - versao 0.11.0
+========================================================
+
+COMO ATUALIZAR O SEU OrceHVAC (2 minutos)
+1. Feche o programa por completo.
+2. Va na pasta onde o programa esta instalado. Normalmente:
+   C:\Users\SEU-USUARIO\AppData\Local\Programs\OrceHVAC\resources
+   (dica: clique com o botao direito no atalho do OrceHVAC > "Abrir local do arquivo")
+3. Dentro de "resources", RENOMEIE o arquivo  app.asar  para  app.asar.original
+   (e a sua copia de seguranca: se algo der errado, e so voltar o nome).
+4. Copie para essa pasta o arquivo  app.asar  deste pacote.
+5. Abra o programa. No menu lateral aparece "Comissionamento de obra".
+
+SEUS DADOS NAO SAO APAGADOS (a pasta de dados continua chamada OrceHVAC, de proposito)
+- Orcamentos, clientes e demais cadastros continuam no banco SQLite de sempre.
+- A conferencia salva em arquivos na pasta de dados:
+  %APPDATA%\OrceHVAC\conferencia   (use "Abrir pasta dos dados" no menu do programa)
+  conferencia.json = cadastros e conferencias | arquivos = plantas e fotos | backups = copias automaticas
+
+COMO USAR
+- Modo Escritorio: Administracao > cadastre obra, projeto e planta (PDF, DXF ou imagem),
+  cadastre os itens (um a um ou importando Excel) e posicione os pontos na planta.
+- Modo Campo: Inicio > escolha obra/projeto/pavimento/planta > clique no ponto > preencha o que
+  foi encontrado > Finalizar conferencia. Divergencias ficam em vermelho, tambem na planta.
+- Relatorio: filtre por pavimento, planta, categoria e status; salve em PDF ou exporte Excel/CSV.
+- Troca de arquivo entre computadores: Administracao > Backup e troca de arquivos.
