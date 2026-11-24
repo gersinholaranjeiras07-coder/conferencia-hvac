@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.10.4';
+const APP_VERSION='0.11.0';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -91,7 +91,7 @@ function same(k,a,b){a=String(a??'').trim();b=String(b??'').trim();if(!a||!b)ret
  if(TOLK.includes(k)){const x=nums(a),y=nums(b);if(x.length===1&&y.length===1)return y[0]>=x[0]-1e-9&&y[0]<=x[0]*(1+TOLS[k])+1e-9}
  if(F[k].num){const x=nums(a),y=nums(b);if(x.length&&y.length)return x.length===y.length&&x.every((v,i)=>v===y[i])}
  return normT(a)===normT(b)}
-const CF_KEYS=['modelo','vazao','vazaoagua','dimensoes'],CK=cat=>cat.conf.filter(k=>CF_KEYS.includes(k)),CHK_ON=false;
+const CF_KEYS=['vazao','vazaoagua'],PJ_HIDE=['tipo','dimensoes'],CK=cat=>cat.conf.filter(k=>CF_KEYS.includes(k)),CHK_ON=false;
 function diverg(id){const it=item(id),c=S.conf[id];if(!it||!c)return[];
  return CK(CATS[it.cat]).filter(k=>{const pv=(it.campos[k]||'').trim();return pv&&!same(k,pv,c.campos[k]||'')})}
 function statusOf(id){const c=S.conf[id];if(!c)return 'pendente';if(c.estado!=='finalizada')return 'em_conferencia';return (diverg(id).length||chkFails(id).length)?'divergente':'conferido'}
@@ -552,7 +552,8 @@ function dxfPrepare(text,pl){
  const diag={model:modelE.length,paper:paperE.length,usedPaper,xrefs,unsup,nprims:prims.length,types:raw.types};
  let rooms=[];try{rooms=findRooms(prims)}catch(e){console.warn('rooms',e)}
  let ds={dims:[],kinds:{},kc:{}};try{ds=ductScan(layers,prims)}catch(e){console.warn('duct',e)}
- const R={prims,x0:ext.x0,y0:ext.y0,w:ext.w,h:ext.h,inserts,texts:prims.filter(q=>q.t==='t'),nIns:recs.length,diag,clusters,rooms,dims:ds.dims,kinds:ds.kinds,kc:ds.kc};
+ const legend=[];try{const seen=new Set();for(const b of Object.values(dxf.blocks||{})){if(!b||!b.entities)continue;for(const e of b.entities){if(e.type!=='MTEXT'&&e.type!=='TEXT')continue;let tx=String(e.text||'');if(e.type==='MTEXT')tx=tx.replace(/\\P/g,'\n').replace(/\\[A-Za-z][^;]*;/g,'').replace(/[{}]/g,'');if(/\d+\s+UNIDADES?\b/i.test(tx)&&!seen.has(tx)){seen.add(tx);legend.push(tx)}}}}catch(err){}
+ const R={legend,prims,x0:ext.x0,y0:ext.y0,w:ext.w,h:ext.h,inserts,texts:prims.filter(q=>q.t==='t'),nIns:recs.length,diag,clusters,rooms,dims:ds.dims,kinds:ds.kinds,kc:ds.kc};
  if(rooms.length)R.dims.forEach(m=>{m.room=roomOf(R,m.cx,m.cy)});
  return R;
 }
@@ -681,7 +682,49 @@ function planCad(d,cat,room){
   if(r.room){cp.ambiente=r.room.n;cp.localizacao=r.room.n}
   r.campos={};for(const k of P)if(cp[k])r.campos[k]=cp[k]}
  return{rows,fresh,done:rows.length-fresh.length}}
-function cadModal(cat,room){const d=docCache[V.p.id];if(!d)return;const pl=planCad(d,cat,room);V.cadPlan={cat,pl};
+
+/* ===== LEGENDA DO DESENHO: "FANCOLETE … - 15 UNIDADES" vira 15 equipamentos cadastrados (sem posição) ===== */
+const LEG_CATS=['fancolete','fancoil','chiller','bomba'];
+const LEG_MARCAS=['trox','berliner','springer','midea','carrier','trane','york','daikin','lg','samsung','hitachi','gree','fujitsu','komeco','elgin','consul','tosi','hiross','mitsubishi','johnson','multistack','rheem'];
+const legNum=x=>String(x||'').replace(/\s+/g,' ').trim();
+function legendaEq(d){
+ const out=[];
+ const srcs=[...(d.texts||[]).map((t,i)=>({ti:i,raw:t.s})),...(d.legend||[]).map((x,i)=>({ti:'b'+i,raw:x}))],seenH=new Set();
+ srcs.forEach(({ti,raw:r0})=>{
+  const raw=String(r0||'').replace(/\^I/g,'\t');
+  const lines=raw.split(/\n/).map(l=>l.replace(/\t+/g,' ').replace(/\s+/g,' ').trim()).filter(Boolean);
+  const body=lines.length>1?lines:raw.replace(/\s+/g,' ').split(/(?=CAPACIDADE |VAZ[ÃA]O |POT\.|TENS[ÃA]O|N° )/i).map(x=>x.trim()).filter(Boolean);
+  const head=body[0]||'';
+  const m=head.match(/^[^A-Za-z0-9]*(.+?)\s+[-–—]\s+(?:(.+?)\s+[-–—]\s+)?(\d{1,3})\s+UNIDADES?\b/i);
+  if(!m)return;
+  const nome=m[1].replace(/\s+/g,' ').trim(),local=(m[2]||'').trim(),n=+m[3];
+  const cat=LEG_CATS.find(c=>normS(nome).includes(normS(CATS[c].l)));
+  if(!cat||n<1||n>300)return;
+  const hk=normS(head);if(seenH.has(hk))return;seenH.add(hk);
+  const all=body.join(' \n ');
+  const g=(re,f)=>{const r=all.match(re);return r?(f?f(r):r[1]):''};
+  const cap=g(/CAPACIDADE NOMINAL\s*:?\s*([\d.,]+\s*TR)/i),
+        vaz=g(/VAZ[ÃA]O TOTAL\s*:?\s*([\d.,]+)\s*m/i,r=>legNum(r[1])+' m³/h'),
+        vagua=g(/VAZ[ÃA]O DE [ÁA]GUA\s*:?\s*([\d.,]+)\s*m/i,r=>legNum(r[1])+' m³/h')||g(/VAZ[ÃA]O AAG\/RAG\s*:?\s*([\d.,]+)\s*m/i,r=>legNum(r[1])+' m³/h'),
+        pot=g(/POT\.?\s*(?:DO\s*)?MOTOR\s*:?\s*([\d.,]+\s*k?W)/i),
+        ten=g(/TENS[ÃA]O\s*:?\s*([0-9]{2,3}\s*V[^\s]*)/i),
+        marca=(LEG_MARCAS.find(x=>normS(nome).includes(x))||'');
+  const fab=marca?marca[0].toUpperCase()+marca.slice(1):'';
+  out.push({ti,cat,n,nome,local,campos:{fabricante:fab,modelo:nome.replace(/\s+/g,' '),capacidade:cap,vazao:vaz,vazaoagua:vagua,potencia:pot,tensaoeq:ten,localizacao:local}});
+ });
+ return out}
+function planLegenda(d,cat){
+ const pid=V.p.id,L=legendaEq(d).filter(x=>cat==='*'||x.cat===cat);
+ const done=new Set(S.itens.filter(i=>i.projetoId===V.p.projetoId&&i.src).map(i=>i.src));
+ const used=new Set(projItens(V.p.projetoId).map(i=>String(i.campos.tag||'').toUpperCase())),cnt={};
+ const rows=[];
+ for(const e of L){const P=CATS[e.cat].proj;
+  for(let k=1;k<=e.n;k++){const src='leg:'+pid+':'+e.ti+':'+k;if(done.has(src))continue;
+   let n=cnt[e.cat]||0,tag;do{n++;tag=CATS[e.cat].s+'-'+String(n).padStart(2,'0')}while(used.has(tag));cnt[e.cat]=n;used.add(tag);
+   const campos={tag,pavimento:V.p.pav||''};for(const f of P){if(f==='tag'||f==='pavimento')continue;if(e.campos[f])campos[f]=e.campos[f]}
+   rows.push({cat:e.cat,tag,src,campos})}}
+ return rows}
+function cadModal(cat,room){const d=docCache[V.p.id];if(!d)return;const pl=planCad(d,cat,room);pl.leg=planLegenda(d,cat);V.cadPlan={cat,pl};
  const ro=d.rooms&&d.rooms.length?roomOpts(d):[];
  const byCat={},byRoom=new Map();pl.fresh.forEach(r=>{byCat[r.cat]=(byCat[r.cat]||0)+1;const k=r.room?r.room.n:'Sem ambiente identificado';const m=byRoom.get(k)||{n:0,c:{}};m.n++;m.c[r.cat]=(m.c[r.cat]||0)+1;byRoom.set(k,m)});
  openModal(`<h3>Cadastrar a partir do desenho</h3>
@@ -690,18 +733,21 @@ function cadModal(cat,room){const d=docCache[V.p.id];if(!d)return;const pl=planC
  <div class="pr"><label>Onde</label><select data-chg="cadRoom"><option value="">Toda a planta</option>${ro.map(x=>`<option value="${x.i}" ${String(x.i)===String(room)?'selected':''}>${esc(x.r.n)} · ${String(x.r.A).replace('.',',')} m²</option>`).join('')}</select></div></div>
  <div class="cad-sum"><div class="cad-n"><b>${pl.fresh.length}</b><span>para cadastrar</span></div>${pl.done?`<div class="cad-n"><b>${pl.done}</b><span>já cadastrados</span></div>`:''}
   <div class="cad-chips">${Object.entries(byCat).map(([k,n])=>`<span class="pk-chip c">${n} ${esc(CATS[k].l)}</span>`).join('')}</div></div>
+ ${pl.leg.length?`<div class="cad-sum" style="margin-top:10px"><div class="cad-n"><b>${pl.leg.length}</b><span>da legenda (sem posição)</span></div><div class="cad-chips">${Object.entries(pl.leg.reduce((m,r)=>(m[r.cat]=(m[r.cat]||0)+1,m),{})).map(([k,n])=>`<span class="pk-chip c">${n} ${esc(CATS[k].l)}</span>`).join('')}</div></div><p class="muted" style="margin:4px 0 0;font-size:12px">Lidos da legenda do desenho (ex.: “… – 15 UNIDADES”). Ficam cadastrados com modelo, capacidade e vazão; é só posicioná-los depois.</p>`:''}
  ${pl.fresh.length?`<div class="cad-list">${[...byRoom.entries()].slice(0,40).map(([k,m])=>`<div class="cad-r"><span>📍 <b>${esc(k)}</b></span><span class="muted">${Object.entries(m.c).map(([c,n])=>n+' '+esc(CATS[c].l)).join(' · ')}</span></div>`).join('')}${byRoom.size>40?`<div class="muted">… e mais ${byRoom.size-40} ambiente(s)</div>`:''}</div>
  <div class="pk-l">Exemplos de TAG</div><div class="cad-tags">${pl.fresh.slice(0,8).map(r=>`<span class="pk-chip">${esc(r.tag)}</span>`).join('')}</div>`
- :`<div class="muted" style="margin-top:10px">Nada novo para cadastrar com este filtro. O programa procura no desenho textos com o nome da categoria (ex.: “DIFUSOR”, “GRELHA”) ou as palavras-chave salvas.</div>`}
- <div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" data-act="cadGo" ${pl.fresh.length?'':'disabled'}>Cadastrar ${pl.fresh.length}</button></div>`)}
+ :(pl.leg.length?'':`<div class="muted" style="margin-top:10px">Nada novo para cadastrar com este filtro. O programa procura no desenho textos com o nome da categoria (ex.: “DIFUSOR”, “GRELHA”) ou as palavras-chave salvas.</div>`)}
+ <div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" data-act="cadGo" ${pl.fresh.length||pl.leg.length?'':'disabled'}>Cadastrar ${pl.fresh.length+pl.leg.length}</button></div>`)}
 let cadSel={cat:'*',room:''};
 CHG.cadCat=b=>{cadSel.cat=b.value;cadModal(cadSel.cat,cadSel.room)};
 CHG.cadRoom=b=>{cadSel.room=b.value;cadModal(cadSel.cat,cadSel.room)};
 ACT.dxfCad=()=>{cadSel={cat:ui.catFilter||'*',room:V.room!=null?String(V.room):''};cadModal(cadSel.cat,cadSel.room)};
-ACT.cadGo=()=>{const d=docCache[V.p.id],P=V.cadPlan;if(!d||!P||!P.pl.fresh.length)return;const {pl}=P;
+ACT.cadGo=()=>{const d=docCache[V.p.id],P=V.cadPlan;if(!d||!P||!(P.pl.fresh.length||(P.pl.leg||[]).length))return;const {pl}=P;
  for(const r of pl.fresh){const it={id:uid(),projetoId:V.p.projetoId,cat:r.cat,campos:r.campos,src:r.src};S.itens.push(it);
   S.marcas.push({id:uid(),itemId:it.id,plantaId:V.p.id,pagina:ui.pagina,x:(r.cx-d.x0)/d.w,y:1-(r.cy-d.y0)/d.h})}
- logH('criou','item','',`Cadastrou ${pl.fresh.length} equipamento(s) a partir do desenho ${V.p.nome}`);save();closeModal();V.hl=null;viewerUpdate();toast(pl.fresh.length+' equipamento(s) cadastrado(s) e posicionado(s) na planta')};
+ for(const r of (pl.leg||[]))S.itens.push({id:uid(),projetoId:V.p.projetoId,cat:r.cat,campos:r.campos,src:r.src});
+ const nl=(pl.leg||[]).length;
+ logH('criou','item','',`Cadastrou ${pl.fresh.length+nl} equipamento(s) a partir do desenho ${V.p.nome}`);save();closeModal();V.hl=null;viewerUpdate();toast((pl.fresh.length?pl.fresh.length+' cadastrado(s) e posicionado(s) na planta':'')+(pl.fresh.length&&nl?' · ':'')+(nl?nl+' da legenda (sem posição)':''))};
 /* botão na tela de Itens: abre a planta DXF e já pergunta o que cadastrar */
 function cadWhenReady(id){let n=0;const t=setInterval(()=>{n++;const d=docCache[id];if(d&&d.prims&&V&&V.p.id===id){clearInterval(t);ACT.dxfCad()}else if(n>200)clearInterval(t)},300)}
 ACT.cadItens=()=>{const pls=S.plantas.filter(p=>p.projetoId===ui.projetoId&&p.tipo==='dxf');
@@ -843,7 +889,7 @@ async function openConf(id,draft){
  const c=S.conf[id];
  const d={campos:{...(c?.campos||{})},obs:c?.obs||'',fotos:[...(c?.fotos||[])],assin:c?.assin||'',chk:c?.chk||undefined,added:[],removed:[]};
  if(draft)Object.assign(d,draft);
- const CKS=CK(cat);const REQ=['modelo'].filter(k=>CKS.includes(k));
+ const CKS=CK(cat);const REQ=[].filter(k=>CKS.includes(k));
  REQ.forEach(k=>{if(!c||!(k in (c.campos||{})))d.campos[k]=(it.campos[k]||'').trim()});
  const fin=c?.estado==='finalizada';
  const pl=plantasDoItem(id).join(', ');
@@ -853,7 +899,7 @@ async function openConf(id,draft){
   openModal(`<h3>${esc(it.campos.tag)} <span class="muted" style="font-weight:400">${cat.l}${pl?' · '+esc(pl):''}</span> <span class="chip s-${st}">${ST[st]}</span> ${pendBadge(id)}<span class="h3-tools"><button class="btn sec sm" type="button" data-act="confDocs">📎 Documentos${(it.docs||[]).length?' ('+it.docs.length+')':''}</button><button class="btn sec sm" type="button" data-act="confPend">⚑ Pendência</button></span></h3>${hierInfo(it)}
   <div class="two">
    <div class="panel proj"><h4>📘 Informações do projeto <span class="muted">(somente leitura)</span></h4>
-    ${cat.proj.map(k=>`<div class="pr"><label>${F[k].l}</label><div class="v" id="pv_${k}">${esc(it.campos[k]||'—')}</div></div>`).join('')}</div>
+    ${cat.proj.filter(k=>!PJ_HIDE.includes(k)).map(k=>`<div class="pr"><label>${F[k].l}</label><div class="v" id="pv_${k}">${esc(it.campos[k]||'—')}</div></div>`).join('')}</div>
    <div class="panel obra"><h4>🏗 Informações encontradas na obra</h4>
     ${CKS.map(k=>`<div class="pr"><label>${F[k].l}${REQ.includes(k)?' <b style="color:#b42318" title="Obrigatório">*</b>':''}${TOLK.includes(k)?` <small class="muted" title="Valor igual ao projeto ou até ${Math.round(TOLS[k]*100)}% acima é considerado conferido">(até +${Math.round(TOLS[k]*100)}%)</small>`:''}</label><input type="text" data-k="${k}" id="cf_${k}" value="${esc(d.campos[k]||'')}" placeholder="${it.campos[k]?'Projeto: '+esc(it.campos[k]):REQ.includes(k)?'Obrigatório — informe o que foi encontrado':''}" ${REQ.includes(k)?'required':''} autocomplete="off"></div>`).join('')}
     ${REQ.length?'<p class="muted" style="margin:0 0 8px;font-size:12px"><b style="color:#b42318">*</b> Obrigatórios: já vêm preenchidos com o que está no projeto. Confira na obra e <b>corrija</b> o que for diferente.</p>':''}
