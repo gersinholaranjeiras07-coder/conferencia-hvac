@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.9.4';
+const APP_VERSION='0.10.0';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -113,7 +113,7 @@ function renderTop(){
  const hasP=!!ui.projetoId,v=ui.view,off=mode==='escritorio';
  root.classList.toggle('office',off);
  $('#cfHead').innerHTML=`<div><div class="eyebrow">Obra e campo</div><h1>Comissionamento de obra</h1><p>${off?'Modo escritório: cadastre equipamentos, terminais, plantas e posicione os pontos.':'Modo campo: abra a planta, toque no ponto e registre o que foi instalado.'}</p></div>
-  <div class="cf-tools">${bellHTML()}<button class="btn sec" data-act="qrScan" title="Ler a etiqueta QR do equipamento com a câmera">📷 Ler QR</button><button class="btn sec usr-btn" data-act="user" title="Minha conta · trocar de usuário · sair">${user?avatar(user,true)+' <span>'+esc(user)+'</span> ▾':'👤 Entrar'}</button>
+  <div class="cf-tools">${cloudHTML()}${bellHTML()}<button class="btn sec" data-act="qrScan" title="Ler a etiqueta QR do equipamento com a câmera">📷 Ler QR</button><button class="btn sec usr-btn" data-act="user" title="Minha conta · trocar de usuário · sair">${user?avatar(user,true)+' <span>'+esc(user)+'</span> ▾':'👤 Entrar'}</button>
   ${canOffice()?`<div class="seg"><button data-act="mode" data-v="campo" class="${mode==='campo'?'on':''}">Campo</button><button data-act="mode" data-v="escritorio" class="${mode==='escritorio'?'on':''}">Escritório</button></div>`:'<span class="chip s-em_conferencia" title="Seu acesso é só para conferir em campo">Modo campo</span>'}</div>`;
  $('#cfNav').innerHTML=`<button data-act="nav" data-v="home" class="${v==='home'||v==='plant'?'active':''}">Início</button>
   ${hasP?`<button data-act="nav" data-v="itens" class="${v==='itens'?'active':''}">Itens</button><button data-act="nav" data-v="pend" class="${v==='pend'?'active':''}">Pendências${pendProj().filter(x=>x.estado!=='fechada').length?' <span class="tabn">'+pendProj().filter(x=>x.estado!=='fechada').length+'</span>':''}</button><button data-act="nav" data-v="painel" class="${v==='painel'?'active':''}">Painel</button><button data-act="nav" data-v="report" class="${v==='report'?'active':''}">Relatório</button>`:''}
@@ -880,10 +880,10 @@ async function openConf(id,draft){
   }
   d.removed.forEach(blobDel);
   S.conf[id]={campos:d.campos,obs:d.obs,fotos:d.fotos,assin:c?.assin||'',chk:d.chk||undefined,estado:final?'finalizada':'rascunho',resp:user,data:new Date().toISOString()};
-  if(final)pendSync(id);
+  if(final)pendSync(id);if(sbSess)setOutbox([...outbox(),id]);
   logH('conferiu','conferencia',id,`${final?'Finalizou':'Salvou rascunho da'} conferência de ${it.campos.tag}`);
   save();modalCleanup=null;SG=null;closeModal();refreshAfterConf();
-  const s=statusOf(id);toast(final?(s==='divergente'?'⚠ Divergência identificada em '+it.campos.tag:'✔ '+it.campos.tag+' conferido'):'Rascunho salvo');
+  if(sbSess)sbKick();const s=statusOf(id);toast(final?(s==='divergente'?'⚠ Divergência identificada em '+it.campos.tag:'✔ '+it.campos.tag+' conferido'):'Rascunho salvo');
  };
  ACT.confDocs=()=>{harvest();RET={id,draft:d};docsModal(id)};ACT.confPend=()=>{harvest();RET={id,draft:d};pendNewForm(id)};
  ACT.markFoto=async b=>{harvest();const i=+b.dataset.i,old=d.fotos[i],u=await urlFor(old);markEditor(u,async bl=>{const nid='ph_'+uid();await blobSet(nid,bl);d.fotos[i]=nid;d.added.push(nid);if(d.added.includes(old)){blobDel(old);d.added=d.added.filter(a=>a!==old)}else d.removed.push(old);draw()})};
@@ -1625,13 +1625,17 @@ const avatar=(n,sm,big)=>`<span class="usr-av ${sm?'sm':''} ${big?'big':''}" sty
 const sessGet=()=>{try{return sessionStorage.getItem('orcehvac.conf.sess')||localStorage.getItem('orcehvac.conf.sess')||''}catch(e){return ''}};
 const sessSet=(id,keep)=>{try{sessionStorage.setItem('orcehvac.conf.sess',id);if(keep)localStorage.setItem('orcehvac.conf.sess',id);else localStorage.removeItem('orcehvac.conf.sess')}catch(e){}};
 const sessClear=()=>{try{sessionStorage.removeItem('orcehvac.conf.sess');localStorage.removeItem('orcehvac.conf.sess')}catch(e){}};
+const sbUser=()=>{const em=(sbSess&&sbSess.email)||'';const n=em.split('@')[0].replace(/[._-]+/g,' ');return {id:'sb:'+em,nome:n.replace(/\b\w/g,c=>c.toUpperCase())||'Engenheiro',papel:'Engenheiro (campo)',sb:true,email:em}};
 function loginAs(u,keep){me=u;user=u.nome;localStorage.setItem('orcehvac.conf.usuario',user);sessSet(u.id,keep);if(!canOffice()){mode='campo';localStorage.setItem('orcehvac.conf.modo','campo')}}
 function gate(then){
+ if(me&&me.sb&&sbSess)return true;
  if(me){const u=S.usuarios.find(x=>x.id===me.id);if(u){me=u;return true}me=null}
- const id=sessGet(),u=id&&S.usuarios.find(x=>x.id===id);
+ const id=sessGet();
+ if(id&&id.startsWith('sb:')&&sbSess){loginAs(sbUser(),!!localStorage.getItem('orcehvac.conf.sess'));return true}
+ const u=id&&S.usuarios.find(x=>x.id===id);
  if(u){loginAs(u,!!localStorage.getItem('orcehvac.conf.sess'));return true}
  showLogin(then);return false}
-function logout(){sessClear();me=null;user='';ui.view='home';showLogin(start)}
+function logout(){if(me&&me.sb)sbSave(null);sessClear();me=null;user='';ui.view='home';showLogin(start)}
 function guardMode(){if(mode==='escritorio'&&!canOffice()){mode='campo';localStorage.setItem('orcehvac.conf.modo','campo');if(ui.view==='admin')ui.view='home'}}
 function askOffice(then){if(canOffice()){then();return}toast('Seu usuário é do tipo Engenheiro (campo): só confere. Peça acesso ao administrador.')}
 const newCode=()=>{const AL='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';return Array.from(rnd(10),x=>AL[x%AL.length]).join('')};
@@ -1644,8 +1648,8 @@ function showLogin(then){
  const shell=inner=>`<div class="lg-wrap"><div class="lg-card"><div class="lg-logo">${LOGO}</div><h1>Comissionamento de obra</h1>${inner}</div><div class="lg-foot">Versão ${APP_VERSION}</div></div>`;
  const eye=id=>`<button type="button" class="lg-eye" data-eye="${id}" title="Mostrar/ocultar senha">👁</button>`;
  const draw=()=>{let h='';
-  if(step==='type')h=`<p class="lg-sub">Entre com seu usuário</p><p class="muted lg-p" style="margin-top:0">O usuário e a senha são passados pelo escritório.</p>${note?`<div class="lg-ok">${esc(note)}</div>`:''}
-   <div class="fld"><label for="tl_u">Usuário</label><input id="tl_u" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" autofocus></div>
+  if(step==='type')h=`<p class="lg-sub">Entre com seu e-mail</p><p class="muted lg-p" style="margin-top:0">O e-mail e a senha são passados pelo escritório.</p>${note?`<div class="lg-ok">${esc(note)}</div>`:''}
+   <div class="fld"><label for="tl_u">E-mail</label><input id="tl_u" type="email" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" autofocus></div>
    <div class="fld"><label for="tl_p">Senha</label><div class="lg-pw"><input id="tl_p" type="password" autocomplete="current-password">${eye('tl_p')}</div></div><div id="lg_err" class="lg-err"></div>
    <label class="lg-keep"><input type="checkbox" id="tl_keep" ${keep?'checked':''}> Manter conectado neste aparelho</label>
    <button class="btn lg-go" id="tl_go">Entrar</button><div class="lg-links"><a href="#" id="tl_forgot">Esqueci minha senha</a></div>`;
@@ -1679,13 +1683,11 @@ function showLogin(then){
     const salt=newSalt(),u={id:uid(),nome:n,papel:'Administrador',s:salt,h:hashPw(a,salt)};S.usuarios.push(u);recCode=newCode();S.cfg=S.cfg||{};S.cfg.rec={s:salt,h:hashPw(recCode,salt)};pendUser=u;user=n;logH('criou','usuario',u.id,'Criou o administrador '+n);save();step='rec';draw()};
    q('#fs_go').onclick=f;q('#fs_p2').onkeydown=e=>{if(e.key==='Enter')f()};setTimeout(()=>q('#fs_n')?.focus(),40)}
   if(step==='type'){const f=async()=>{const now=Date.now();if(now<lockUntil)return err('Muitas tentativas. Aguarde '+Math.ceil((lockUntil-now)/1000)+' s.');
-    const nm=normT(q('#tl_u').value.trim()),pw=q('#tl_p').value;keep=q('#tl_keep').checked;if(!nm||!pw)return err('Digite o usuário e a senha.');
+    const em=q('#tl_u').value.trim().toLowerCase(),pw=q('#tl_p').value;keep=q('#tl_keep').checked;if(!em||!pw)return err('Digite o e-mail e a senha.');
     const b=q('#tl_go');b.disabled=true;b.textContent='Entrando…';
-    try{if(!S.usuarios.length||!S.usuarios.some(u=>normT(u.nome)===nm))await loadUserFile()}catch{}
-    b.disabled=false;b.textContent='Entrar';
-    if(!S.usuarios.length)return err('Não consegui carregar a lista de usuários. Verifique a internet e tente de novo; se continuar, avise o escritório.');
-    const u=S.usuarios.find(x=>normT(x.nome)===nm);if(u&&u.h&&hashPw(pw,u.s)===u.h){go(u);return}
-    fails++;if(fails>=5){fails=0;lockUntil=Date.now()+30000;err('Muitas tentativas. Aguarde 30 s.')}else err('Usuário ou senha incorretos.');q('#tl_p').select()};
+    try{await sbAuth('password',{email:em,password:pw});b.disabled=false;go(sbUser());return}
+    catch(e){b.disabled=false;b.textContent='Entrar';fails++;if(fails>=5){fails=0;lockUntil=Date.now()+30000;return err('Muitas tentativas. Aguarde 30 s.')}
+     err(e.status?e.message:'Sem conexão com a internet. Conecte e tente de novo.');q('#tl_p').select()}};
    q('#tl_go').onclick=f;q('#tl_p').onkeydown=e=>{if(e.key==='Enter')f()};q('#tl_u').onkeydown=e=>{if(e.key==='Enter')q('#tl_p').focus()};setTimeout(()=>q('#tl_u')?.focus(),40);
    q('#tl_forgot').onclick=e=>{e.preventDefault();err('Peça ao escritório para redefinir a sua senha.')}}
   if(step==='nouser')q('#nu_go').onclick=async()=>{q('#nu_go').disabled=true;q('#nu_go').textContent='Verificando…';await loadUserFile();if(S.usuarios.length){step='pick';draw()}else{q('#nu_go').disabled=false;q('#nu_go').textContent='Tentar novamente';err('Ainda não há usuários. Fale com o escritório.')}};
@@ -1802,20 +1804,25 @@ ACT.snapRest=async b=>{if(!confirm('Voltar o cadastro para esta cópia? O estado
 function adminBkp(){
  const dk=!!desk(),lb=localStorage.getItem('orcehvac.conf.lastBkp'),ls=localStorage.getItem('orcehvac.conf.lastSync');
  return (dk?`<div class="card"><h3>Backup completo (dados, plantas e fotos)</h3><p>Copia tudo para uma pasta de sua escolha (pendrive, OneDrive, rede). Último backup: <b>${lb?fdt(lb):'nunca feito'}</b>.</p><div class="row"><button class="btn" data-act="bkpFolder" style="flex:none">💾 Fazer backup completo</button><button class="btn sec" data-act="restFolder" style="flex:none">Restaurar de um backup…</button></div></div>
- <div class="card"><h3>Equipe: sincronizar por pasta compartilhada</h3><p>Escolha uma pasta que todos acessam (OneDrive, Google Drive, rede). Cada computador grava ali o próprio estado e junta o dos outros automaticamente — conferências, fotos, plantas e pontos. Se duas pessoas editarem o mesmo item, vale a alteração mais recente.</p>${syncOn?`<p>Sincronização <b>ativa</b>${ls?' · última: '+fdt(ls):''}.</p><div class="row"><button class="btn" data-act="syncNow" style="flex:none">🔄 Sincronizar agora</button><button class="btn sec" data-act="syncPick" style="flex:none">Trocar pasta</button><button class="btn red" data-act="syncOff" style="flex:none">Desligar</button></div>`:`<div class="row"><button class="btn" data-act="syncPick" style="flex:none">📁 Escolher pasta compartilhada</button></div>`}</div>`:'')+`<div class="card"><h3>Como levar o projeto do escritório para o engenheiro</h3>
+ <div class="card"><h3>Equipe: sincronizar por pasta compartilhada</h3><p>Escolha uma pasta que todos acessam (OneDrive, Google Drive, rede). Cada computador grava ali o próprio estado e junta o dos outros automaticamente — conferências, fotos, plantas e pontos. Se duas pessoas editarem o mesmo item, vale a alteração mais recente.</p>${syncOn?`<p>Sincronização <b>ativa</b>${ls?' · última: '+fdt(ls):''}.</p><div class="row"><button class="btn" data-act="syncNow" style="flex:none">🔄 Sincronizar agora</button><button class="btn sec" data-act="syncPick" style="flex:none">Trocar pasta</button><button class="btn red" data-act="syncOff" style="flex:none">Desligar</button></div>`:`<div class="row"><button class="btn" data-act="syncPick" style="flex:none">📁 Escolher pasta compartilhada</button></div>`}</div>`:'')+`${cloudCard()}<div class="card"><h3>Publicar obras para os engenheiros (site)</h3><p>Marque as obras que os engenheiros devem ver. O programa gera o arquivo <b>obras.gz</b> (plantas e equipamentos, sem fotos nem documentos). Suba esse arquivo no GitHub, na mesma pasta do <b>index.html</b> e do usuarios.json. Quando o engenheiro abrir o link e entrar, a obra já aparece pronta. Sempre que alterar a obra, publique de novo.</p>${S.obras.length?S.obras.map(o=>`<label style="display:flex;gap:8px;align-items:center;margin:4px 0"><input type="checkbox" data-pub="${o.id}" ${o.pub?'checked':''}> ${esc(o.nome)}</label>`).join(''):'<p class="muted">Cadastre uma obra primeiro.</p>'}<div class="row" style="margin-top:8px"><button class="btn" data-act="pubObras" style="flex:none">⬇ Gerar obras.gz</button></div></div><div class="card"><h3>Como levar o projeto do escritório para o engenheiro</h3>
  <p>Os dados ficam salvos neste navegador/aparelho. Para enviar um projeto ao engenheiro: <b>exporte a obra</b> (arquivo .json com plantas, equipamentos, pontos e fotos) e envie por WhatsApp, e-mail ou pendrive. O engenheiro <b>importa</b> o arquivo no aparelho dele. Depois da conferência, o engenheiro exporta de volta e o escritório importa para ver as conferências — nada é sobrescrito: itens e conferências são mesclados pelo identificador.</p>
  <div class="row"><div><label>Obra para exportar</label><select id="expObra">${S.obras.map(o=>`<option value="${o.id}" ${o.id===ui.obraId?'selected':''}>${esc(o.nome)}</option>`).join('')}</select></div>
  <button class="btn" data-act="expObra" style="flex:none">⬇ Exportar obra</button>
  <button class="btn sec" data-act="impPkg" style="flex:none">⬆ Importar arquivo</button><input type="file" id="impF" accept=".json,application/json" style="display:none"></div></div>
  <div class="card"><h3>Backup completo</h3><div class="row"><button class="btn sec" data-act="expAll" style="flex:none">⬇ Backup de tudo (arquivo)</button><button class="btn sec" data-act="snapView" style="flex:none">🕘 Cópias automáticas</button><button class="btn red" data-act="wipe" style="flex:none">Apagar todos os dados</button></div>
  <p class="muted">Recomendação: faça backup periodicamente. Os dados ficam na pasta de dados do OrceHVAC (subpasta conferencia); inclua-a nas cópias de segurança do computador.</p><p class="muted">Versão do aplicativo: ${APP_VERSION}</p></div>`}
-async function packObras(obraIds){
+async function packObras(obraIds,leve){
  const projetos=S.projetos.filter(p=>obraIds.includes(p.obraId)),pids=projetos.map(p=>p.id);
  const plantas=S.plantas.filter(p=>pids.includes(p.projetoId)),itens=S.itens.filter(i=>pids.includes(i.projetoId)),iids=new Set(itens.map(i=>i.id));
  const marcas=S.marcas.filter(m=>iids.has(m.itemId)),conf={};iids.forEach(i=>{if(S.conf[i])conf[i]=S.conf[i]});
- const bl={};for(const id of [...plantas.flatMap(p=>[p.blobId,...(p.revs||[]).map(r=>r.blobId)]),...itens.flatMap(i=>(i.docs||[]).map(d=>d.blobId)),...Object.values(conf).flatMap(c=>c.fotos)]){const b=await blobGet(id);if(b)bl[id]=await blobToDataURL(b)}
- return {formato:'conferencia-hvac',versao:1,exportado:new Date().toISOString(),obras:S.obras.filter(o=>obraIds.includes(o.id)),projetos,plantas,itens,marcas,conf,pend:(S.pend||[]).filter(x=>iids.has(x.itemId)),aceites:(S.aceites||[]).filter(a=>pids.includes(a.projetoId)),modelos:S.modelos||[],blobs:bl,hist:S.hist.filter(h=>iids.has(h.ref)||pids.includes(h.ref)||obraIds.includes(h.ref))}}
+ if(leve)Object.keys(conf).forEach(k=>{conf[k]={...conf[k],fotos:[]}});
+ const bl={};for(const id of (leve?plantas.map(p=>p.blobId):[...plantas.flatMap(p=>[p.blobId,...(p.revs||[]).map(r=>r.blobId)]),...itens.flatMap(i=>(i.docs||[]).map(d=>d.blobId)),...Object.values(conf).flatMap(c=>c.fotos)])){const b=await blobGet(id);if(b)bl[id]=await blobToDataURL(b)}
+ return {formato:'conferencia-hvac',versao:1,exportado:new Date().toISOString(),obras:S.obras.filter(o=>obraIds.includes(o.id)),projetos,plantas,itens,marcas,conf,pend:(S.pend||[]).filter(x=>iids.has(x.itemId)),aceites:(S.aceites||[]).filter(a=>pids.includes(a.projetoId)),modelos:S.modelos||[],blobs:bl,hist:leve?[]:S.hist.filter(h=>iids.has(h.ref)||pids.includes(h.ref)||obraIds.includes(h.ref))}}
 ACT.expObra=async()=>{const id=$('#expObra').value;if(!id)return toast('Cadastre uma obra primeiro');toast('Gerando arquivo…');const p=await packObras([id]);download(`obra_${normT(obra(id).nome)||'obra'}.json`,JSON.stringify(p),'application/json')};
+ACT.pubObras=async()=>{const ids=$$('[data-pub]:checked').map(e=>e.dataset.pub);if(!ids.length)return toast('Marque ao menos uma obra');toast('Preparando arquivo…');
+ const p=await packObras(ids,true);p.publicado=true;p.gerado=new Date().toISOString();const gz=await new Response(new Blob([JSON.stringify(p)]).stream().pipeThrough(new CompressionStream('gzip'))).blob();const mb=gz.size/1048576;
+ S.obras.forEach(o=>{o.pub=ids.includes(o.id)});save();download('obras.gz',gz,'application/gzip');
+ toast(mb>24?`Arquivo com ${mb.toFixed(1)} MB: o GitHub recusa acima de 25 MB. Publique menos obras de uma vez.`:`obras.gz gerado (${mb.toFixed(1)} MB). Suba na raiz do GitHub.`);render()};
 ACT.expAll=async()=>{toast('Gerando backup…');const p=await packObras(S.obras.map(o=>o.id));p.usuarios=S.usuarios;download('backup_conferencia_hvac_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(p),'application/json');localStorage.setItem('orcehvac.conf.lastBkp',new Date().toISOString());render()};
 ACT.impPkg=()=>$('#impF').click();
 function bindImp(){const f=$('#impF');if(!f)return;f.onchange=async()=>{const file=f.files[0];if(!file)return;try{await importPkg(JSON.parse(await file.text()));render();toast('Arquivo importado')}catch(e){toast('Arquivo inválido: '+e.message)}f.value=''}}
@@ -1835,6 +1842,61 @@ async function importPkg(p){
 ACT.wipe=async()=>{if(!confirm('Apagar TODOS os dados deste aparelho? Faça backup antes.')||!confirm('Tem certeza? Esta ação não pode ser desfeita.'))return;
  await snapNow('antes de apagar tudo');for(const k of await blobIds())if(!String(k).startsWith('snap_'))await blobDel(k);S={obras:[],projetos:[],plantas:[],itens:[],marcas:[],usuarios:S.usuarios||[],pend:[],aceites:[],modelos:[],conf:{},hist:[],cfg:{rec:S.cfg&&S.cfg.rec},del:{}};resetSigs();ui.obraId=ui.projetoId=ui.plantaId='';await kvSet('state',S);render();toast('Dados apagados')};
 
+
+/* ---------- Nuvem (Supabase): conferências dos engenheiros chegam ao escritório ---------- */
+const SB={url:'https://jbporvwxrrznnrjbsnlc.supabase.co',key:'sb_publishable_xiGgOn2lisXPBEEttSqpaQ_VVhnQWZX'};
+const SBK='orcehvac.conf.sb',OBX='orcehvac.conf.outbox',SBL='orcehvac.conf.sbLast';
+let sbSess=null;try{sbSess=JSON.parse(localStorage.getItem(SBK)||'null')}catch{}
+const sbSave=v=>{sbSess=v;try{v?localStorage.setItem(SBK,JSON.stringify(v)):localStorage.removeItem(SBK)}catch{}};
+const outbox=()=>{try{return JSON.parse(localStorage.getItem(OBX)||'[]')}catch{return[]}};
+const setOutbox=a=>{try{localStorage.setItem(OBX,JSON.stringify([...new Set(a)]))}catch{}};
+const sbInfo={t:'',err:'',busy:false};
+async function sbAuth(grant,body){
+ const r=await fetch(SB.url+'/auth/v1/token?grant_type='+grant,{method:'POST',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const j=await r.json().catch(()=>({}));
+ if(!r.ok){const e=new Error(r.status===400&&grant==='password'?'E-mail ou senha incorretos.':(j.error_description||j.msg||j.message||('erro '+r.status)));e.status=r.status;throw e}
+ sbSave({access_token:j.access_token,refresh_token:j.refresh_token,exp:Date.now()+(j.expires_in||3600)*1000-60000,email:(j.user&&j.user.email)||(sbSess&&sbSess.email)||body.email});return sbSess}
+async function sbToken(){if(!sbSess)return null;if(Date.now()<sbSess.exp)return sbSess.access_token;
+ try{await sbAuth('refresh_token',{refresh_token:sbSess.refresh_token});return sbSess.access_token}catch(e){if(e.status&&e.status>=400&&e.status<500){sbSave(null);throw new Error('Sessão da nuvem expirou. Entre de novo.')}throw e}}
+async function sbReq(path,opt){const t=await sbToken();if(!t)throw new Error('Não conectado à nuvem');
+ const r=await fetch(SB.url+path,{...opt,headers:{apikey:SB.key,Authorization:'Bearer '+t,'Content-Type':'application/json',...((opt&&opt.headers)||{})}});
+ if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.hint||('erro '+r.status))}return r}
+async function sbPull(){
+ const last=localStorage.getItem(SBL)||'';let ch=0,max=last;
+ const r=await sbReq('/rest/v1/conferencias?select=item_id,dados,atualizado_em&order=atualizado_em.asc&limit=5000'+(last?'&atualizado_em=gt.'+encodeURIComponent(last):''));
+ const rows=await r.json();
+ for(const x of rows){if(x.atualizado_em>max)max=x.atualizado_em;if(!item(x.item_id)||!x.dados)continue;
+  const l=S.conf[x.item_id],d=x.dados.data||x.atualizado_em;
+  if(!l||d>(l.data||'')){S.conf[x.item_id]={...x.dados,fotos:(l&&l.fotos)||[],assin:(l&&l.assin)||''};ch++;if(canOffice()&&x.dados.estado==='finalizada')try{pendSync(x.item_id)}catch{}}}
+ if(max)try{localStorage.setItem(SBL,max)}catch{}
+ return ch}
+async function sbPush(){
+ const ids=outbox();if(!ids.length)return 0;
+ const rows=ids.map(id=>{const c=S.conf[id],it=item(id);return c&&it?{item_id:id,projeto_id:it.projetoId,dados:{...c,fotos:[],assin:'',chk:undefined},atualizado_em:c.data||new Date().toISOString(),por:c.resp||''}:null}).filter(Boolean);
+ if(rows.length)await sbReq('/rest/v1/conferencias?on_conflict=item_id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)});
+ setOutbox(outbox().filter(i=>!ids.includes(i)));return rows.length}
+async function sbSync(manual){
+ if(!sbSess||sbInfo.busy)return;if(typeof navigator!=='undefined'&&navigator.onLine===false&&!manual)return;
+ sbInfo.busy=true;
+ try{const n=await sbPull();const m=await sbPush();sbInfo.t=new Date().toISOString();sbInfo.err='';
+  if(n){save();if(root&&root.isConnected&&!($('#cfModal')&&$('#cfModal').innerHTML.trim()))refreshAfterConf();toast(n+' conferência(s) nova(s) da nuvem')}
+  else if(manual)toast('Nuvem em dia'+(m?' · '+m+' enviada(s)':''))}
+ catch(e){sbInfo.err=e.message||'falha';if(manual)toast('Nuvem: '+sbInfo.err)}
+ finally{sbInfo.busy=false;const c=document.getElementById('cfCloud');if(c)c.outerHTML=cloudHTML()}}
+function sbKick(){setTimeout(()=>sbSync(false),300)}
+function cloudHTML(){if(!sbSess)return desk()?`<span id="cfCloud" class="muted" style="font-size:12px">☁ nuvem desligada</span>`:'<span id="cfCloud"></span>';
+ const n=outbox().length;const t=n?`⏳ ${n} aguardando envio`:sbInfo.err?`⚠ ${esc(sbInfo.err)}`:sbInfo.t?`☁ sincronizado ${new Date(sbInfo.t).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`:'☁ conectado';
+ return `<span id="cfCloud" class="muted" style="font-size:12px" title="Conferências enviadas à nuvem">${t}</span>`}
+let sbTimer=0;
+function sbStart(){if(sbTimer||!sbSess)return;sbKick();sbTimer=setInterval(()=>sbSync(false),60000);window.addEventListener('online',()=>sbSync(false))}
+ACT.cloudLogin=()=>{openModal(`<h3>☁ Conectar à nuvem</h3><p class="muted">Use o e-mail e a senha criados para o escritório no Supabase. Assim as conferências dos engenheiros chegam aqui.</p><div class="fld"><label>E-mail</label><input id="cl_e" type="email" autocomplete="username"></div><div class="fld"><label>Senha</label><input id="cl_p" type="password" autocomplete="current-password"></div><div id="cl_err" class="lg-err"></div>
+ <div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" data-act="cloudGo">Conectar</button></div>`)};
+ACT.cloudGo=async()=>{const e=$('#cl_e').value.trim(),p=$('#cl_p').value;if(!e||!p){$('#cl_err').textContent='Digite e-mail e senha.';return}
+ try{await sbAuth('password',{email:e,password:p});closeModal();sbStart();await sbSync(true);render()}catch(x){$('#cl_err').textContent=x.message}};
+ACT.cloudNow=()=>sbSync(true);
+ACT.cloudOff=()=>{if(!confirm('Desconectar da nuvem neste computador? As conferências já recebidas continuam aqui.'))return;sbSave(null);clearInterval(sbTimer);sbTimer=0;render()};
+function cloudCard(){return `<div class="card"><h3>☁ Nuvem: conferências dos engenheiros</h3><p>Quando o engenheiro finaliza ou salva uma conferência no tablet, ela é enviada à nuvem (Supabase). Aqui você recebe e acompanha o andamento. Sem internet no campo, o tablet guarda e envia depois.</p>${sbSess?`<p>Conectado como <b>${esc(sbSess.email||'')}</b> ${cloudHTML()}</p><div class="row"><button class="btn" data-act="cloudNow" style="flex:none">🔄 Buscar agora</button><button class="btn red" data-act="cloudOff" style="flex:none">Desconectar</button></div>`:`<div class="row"><button class="btn" data-act="cloudLogin" style="flex:none">☁ Conectar à nuvem</button></div>`}</div>`}
+
 /* ---------- Montagem no OrceHVAC ---------- */
 let loaded=false,pendingItem=null;
 async function loadUserFile(){if(desk()||!/^https?:/.test(location.protocol))return;
@@ -1844,7 +1906,20 @@ async function loadUserFile(){if(desk()||!/^https?:/.test(location.protocol))ret
    if(i<0){S.usuarios.push(n);ch++}else if(S.usuarios[i].arq&&JSON.stringify(S.usuarios[i])!==JSON.stringify(n)){S.usuarios[i]=n;ch++}}
   const n0=S.usuarios.length;S.usuarios=S.usuarios.filter(u=>!u.arq||ids.has(u.id));ch+=n0-S.usuarios.length;
   if(ch){resetSigs();await kvSet('state',S)}}catch{}}
-async function ensureLoaded(){if(loaded)return true;try{const saved=await kvGet();if(saved)S={...S,...saved};S.cfg=S.cfg||{};S.del=S.del||{};S.usuarios=S.usuarios||[];resetSigs();loaded=true;await loadUserFile();await loadModelFile();initSync();return true}catch(e){toast('Não foi possível ler os dados do comissionamento: '+e.message);return false}}
+async function loadObrasFile(){
+ if(desk()||!/^https?:/.test(location.protocol))return;
+ const pick=()=>{if(!ui.obraId&&S.obras.length===1)ui.obraId=S.obras[0].id;if(ui.obraId&&!ui.projetoId){const ps=S.projetos.filter(x=>x.obraId===ui.obraId);if(ps.length===1)ui.projetoId=ps[0].id}if(ui.projetoId&&!ui.plantaId){const pl=S.plantas.filter(x=>x.projetoId===ui.projetoId);if(pl.length===1)ui.plantaId=pl[0].id}};
+ try{const r=await fetch('obras.gz',{cache:'no-cache'});if(!r.ok){pick();return}
+  const j=JSON.parse(await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text());if(j.formato!=='conferencia-hvac'||!Array.isArray(j.obras)){pick();return}
+  const last=localStorage.getItem('orcehvac.conf.pubGer');if(last===j.gerado&&S.obras.length){pick();return}
+  const up=(arr,x)=>{const i=arr.findIndex(y=>y.id===x.id);if(i<0)arr.push(x);else if((x._u||'')>(arr[i]._u||'')||(!x._u&&!arr[i]._u))arr[i]=x};
+  for(const [id,u] of Object.entries(j.blobs||{})){if(!await blobGet(id)){await blobSet(id,await dataURLToBlob(u));urlCache.delete(id)}}
+  j.obras.forEach(x=>up(S.obras,x));j.projetos.forEach(x=>up(S.projetos,x));j.plantas.forEach(x=>{up(S.plantas,x);delete docCache[x.id]});j.itens.forEach(x=>up(S.itens,x));j.marcas.forEach(x=>up(S.marcas,x));
+  (j.pend||[]).forEach(x=>up(S.pend=S.pend||[],x));(j.aceites||[]).forEach(x=>up(S.aceites=S.aceites||[],x));
+  for(const [id,c] of Object.entries(j.conf||{})){const l=S.conf[id];if(!l||(c.data||'')>(l.data||''))S.conf[id]={...c,fotos:(l&&l.fotos)||[]}}
+  if(j.gerado)localStorage.setItem('orcehvac.conf.pubGer',j.gerado);
+  await kvSet('state',S);pick()}catch{pick()}}
+async function ensureLoaded(){if(loaded)return true;try{const saved=await kvGet();if(saved)S={...S,...saved};S.cfg=S.cfg||{};S.del=S.del||{};S.usuarios=S.usuarios||[];resetSigs();loaded=true;await loadUserFile();await loadModelFile();await loadObrasFile();initSync();return true}catch(e){toast('Não foi possível ler os dados do comissionamento: '+e.message);return false}}
 function mount(){
  const c=document.getElementById('content');root=document.createElement('div');root.className='cf';
  root.innerHTML='<section class="heading" id="cfHead"></section><nav class="module-tabs" id="cfNav"></nav><div id="cfKpi"></div><div id="cfMain"></div><div id="cfModal"></div>';
@@ -1853,7 +1928,7 @@ function mount(){
 async function start(){
  if(!await ensureLoaded())return;
  if(!gate(start))return;
- mount();render();
+ mount();render();sbStart();
  if(pendingItem){const id=pendingItem;pendingItem=null;if(item(id))openConf(id)}
 }
 /* ---------- Visão geral (painel do comissionamento) ---------- */
