@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.14.0';
+const APP_VERSION='0.15.1';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -548,9 +548,9 @@ function dxfFinish(B,pl){
   }
  const pts=[];prims.forEach(q=>{if(q.t==='l')q.p.forEach(v=>pts.push(v));else pts.push([q.x,q.y])});
  const clusters=clusterPts(pts);
- if(pl&&(pl.dxfV||0)<2){delete pl.dxfExt;pl.dxfV=2;pl.dxfCl=0}
+ if(pl&&(pl.dxfV||0)<3){if(S.marcas.some(m=>m.plantaId===pl.id)){if(pl.dxfCl==null)pl.dxfCl=0;if((pl.dxfV||0)<2)delete pl.dxfExt}else{delete pl.dxfExt;pl.dxfCl=-1}pl.dxfV=3}
  let ext=pl&&pl.dxfExt;
- if(!ext){const c=clusters[Math.min(pl?.dxfCl||0,clusters.length-1)]||clusters[0],mx=(c.x1-c.x0)*.04||1,my=(c.y1-c.y0)*.04||1;
+ if(!ext){const all=!pl||pl.dxfCl===-1||pl.dxfCl==null;let c;if(all){const big=clusters[0].n,use=clusters.filter(q=>q.n>=big*.1);c={x0:Math.min(...use.map(q=>q.x0)),y0:Math.min(...use.map(q=>q.y0)),x1:Math.max(...use.map(q=>q.x1)),y1:Math.max(...use.map(q=>q.y1))}}else c=clusters[Math.min(pl.dxfCl||0,clusters.length-1)]||clusters[0];const mx=(c.x1-c.x0)*.04||1,my=(c.y1-c.y0)*.04||1;
   ext={x0:c.x0-mx,y0:c.y0-my,w:c.x1-c.x0+2*mx,h:c.y1-c.y0+2*my};if(pl)pl.dxfExt=ext}
  const inserts=recs.map(r=>{let a=1e308,b=1e308,c=-1e308,d2=-1e308;const texts=[];for(let i=r.i0;i<r.i1;i++){const q=prims[i];if(!q)continue;if(q.x0<a)a=q.x0;if(q.y0<b)b=q.y0;if(q.x1>c)c=q.x1;if(q.y1>d2)d2=q.y1;if(q.t==='t')texts.push(q.s.replace(/\s+/g,' ').trim())}
   return a>c?null:{name:r.name,ly:r.ly,x0:a,y0:b,x1:c,y1:d2,attrs:r.attrs,texts,d:r.d,i0:r.i0,i1:r.i1}}).filter(Boolean);
@@ -595,11 +595,12 @@ function insStrings(d,r){const s=[...r.attrs.map(a=>a.text),...r.texts].filter(B
  return[...new Set(c.sort((a,b)=>a.dist-b.dist).slice(0,2).map(x=>x.s).filter(Boolean))]}
 ACT.dxfCl=()=>{const d=docCache[V.p.id];if(!d)return;const cur=V.p.dxfExt;
  openModal(`<h3>Quadros do desenho</h3><p class="muted">Este DXF tem mais de um desenho separado (por exemplo, folha/carimbo e a planta). Escolha qual mostrar. O maior costuma ser a planta com os equipamentos.</p>
- ${d.clusters.map((c,i)=>`<div class="si" data-act="dxfSetCl" data-i="${i}"><b>Quadro ${i+1}</b><span class="muted">${c.n.toLocaleString('pt-BR')} elementos · ${Math.round(c.x1-c.x0)} × ${Math.round(c.y1-c.y0)} un.</span>${cur&&Math.abs(cur.x0+cur.w*.5-(c.x0+c.x1)/2)<cur.w*.5+1e-6&&Math.abs(cur.w-(c.x1-c.x0)*1.08)<cur.w*.02?'<span class="chip s-conferido">em uso</span>':''}</div>`).join('')}
+ <div class="si" data-act="dxfSetCl" data-i="-1"><b>Planta inteira</b><span class="muted">junta os quadros principais (recomendado)</span>${V.p.dxfCl===-1?'<span class="chip s-conferido">em uso</span>':''}</div>
+ ${d.clusters.map((c,i)=>`<div class="si" data-act="dxfSetCl" data-i="${i}"><b>Quadro ${i+1}</b><span class="muted">${c.n.toLocaleString('pt-BR')} elementos · ${Math.round(c.x1-c.x0)} × ${Math.round(c.y1-c.y0)} un.</span>${V.p.dxfCl!==-1&&cur&&Math.abs(cur.x0+cur.w*.5-(c.x0+c.x1)/2)<cur.w*.5+1e-6&&Math.abs(cur.w-(c.x1-c.x0)*1.08)<cur.w*.02?'<span class="chip s-conferido">em uso</span>':''}</div>`).join('')}
  <div class="mfoot"><button class="btn sec" data-act="closeModal">Fechar</button></div>`)};
 ACT.dxfSetCl=b=>{const p=V.p,n=S.marcas.filter(m=>m.plantaId===p.id).length;
  if(n&&!confirm(`Trocar de quadro move a escala da planta e remove os ${n} ponto(s) já posicionados nela. Continuar?`))return;
- S.marcas=S.marcas.filter(m=>m.plantaId!==p.id);delete p.dxfExt;p.dxfV=2;p.dxfCl=+b.dataset.i;delete docCache[p.id];save();closeModal();loadPage().then(()=>viewerUpdate())};
+ S.marcas=S.marcas.filter(m=>m.plantaId!==p.id);delete p.dxfExt;p.dxfV=3;p.dxfCl=+b.dataset.i;delete docCache[p.id];save();closeModal();loadPage().then(()=>viewerUpdate())};
 ACT.dxfList=()=>{const d=docCache[V?.p.id];if(!d||!d.inserts)return;
  const skip=n=>/^[*]|^A\$C|^_|^ARCH/i.test(n);
  const rows=[];d.inserts.forEach((r,i)=>{if(r.d>0||skip(r.name))return;const strs=insStrings(d,r);const its=matchItems(strs);rows.push({r,i,strs:strs.slice(0,3),its,rm:d.rooms&&d.rooms.length?roomOf(d,(r.x0+r.x1)/2,(r.y0+r.y1)/2):-1})});
@@ -616,6 +617,10 @@ function ensureCv2(){const vp=$('#vp');if(!vp)return null;let c=$('#cv2');if(!c)
 const normS=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
 const hlOn=()=>!!(ui.catFilter||V.q||V.room!=null||V.duct!=null);
 const DEFKW={fancoil:['uta']};
+/* siglas escritas ao lado dos símbolos (ex.: DI-3 difusor, GR-02/GE-01 grelha, DCF/RG damper, UTA fancoil) */
+const SIGLAS=[['difusor',/^DI-?\d{1,2}[A-Z]?$/],['grelha',/^(?:GR|GE|GV|GI|GP|GS)-?\d{1,2}[A-Z]?$/],['damper',/^(?:DCF|DCV|DAF|RG|DMP)(?:-?\d{1,2})?$/],['fancoil',/^UTA(?:-?\d{1,2})?$/],['fancolete',/^FCTH(?:-?\d{1,2})?$/],['chiller',/^(?:CH|CHL)-?\d{1,2}$/],['bomba',/^(?:BAG|BH|BA|BAC|BCA|B)-?\d{1,2}$/]];
+const siglaCat=s=>{const u=String(s||'').replace(/\s+/g,'').toUpperCase();if(!u||u.length>10)return'';for(const[c,r]of SIGLAS)if(r.test(u))return c;return''};
+const VAZ_RE=/(\d+(?:[.,]\d+)?)\s*m\s*[³3]\s*\/\s*h/i,DIM_RE=/^(?:\d{2,4}\s*[xX×]\s*\d{2,4}|[ØøΦ]\s*\d{2,4})$/;
 const kwHit=(k,w)=>w.length>3?k.includes(w):new RegExp('(^|[^a-z0-9])'+w.replace(/[^a-z0-9]/g,'')+'([^a-z0-9]|$)').test(k);
 function collectEq(d,cats,qk){
  const items=projItens(V.p.projetoId).filter(i=>cats.includes(i.cat));
@@ -630,6 +635,14 @@ function collectEq(d,cats,qk){
  for(const t of d.texts){const m=hit(tagKey(t.s));if(m&&!used.has(m.i.id)){out.push({box:t,it:m.i,cat:m.i.cat,label:m.i.campos.tag});used.add(m.i.id);tu.add(t)}}
  const insOut=out.filter(o=>o.r);
  for(const t of d.texts){if(tu.has(t))continue;{const cx=(t.x0+t.x1)/2,cy=(t.y0+t.y1)/2;if(insOut.some(o=>cx>=o.r.x0&&cx<=o.r.x1&&cy>=o.r.y0&&cy<=o.r.y1))continue}const k=normS(t.s);if(all.some(c=>kwHit(k,c))){const l=t.s.split('\n')[0].replace(/\s+/g,' ').trim();out.push({box:t,it:null,cat:catOf(t.s),label:l.length>26?l.slice(0,25)+'…':l})}}
+ {const X1=d.x0+d.w,Y1=d.y0+d.h,seen=new Set(out.filter(o=>o.box).map(o=>o.box)),pos=new Set();
+  const near=(t,re,R)=>{let best=null,bd=1e308;const cx=(t.x0+t.x1)/2,cy=(t.y0+t.y1)/2;for(const q of d.texts){if(q===t)continue;const m=q.s.replace(/\s+/g,' ').trim();if(!re.test(m))continue;const dd=Math.hypot((q.x0+q.x1)/2-cx,(q.y0+q.y1)/2-cy);if(dd<bd&&dd<=R){bd=dd;best=m}}return best};
+  for(const t of d.texts){if(seen.has(t))continue;const ct=siglaCat(t.s);if(!ct||!cats.includes(ct))continue;const cx=(t.x0+t.x1)/2,cy=(t.y0+t.y1)/2;
+   if(cx<d.x0||cx>X1||cy<d.y0||cy>Y1)continue;
+   if(insOut.some(o=>cx>=o.r.x0&&cx<=o.r.x1&&cy>=o.r.y0&&cy<=o.r.y1))continue;
+   const pk=Math.round(cx*20)+','+Math.round(cy*20)+ct;if(pos.has(pk))continue;pos.add(pk);
+   const sg=t.s.replace(/\s+/g,'').toUpperCase(),R=Math.max((t.y1-t.y0)*14,1e-9),vz=near(t,VAZ_RE,R),dm=near(t,DIM_RE,R);
+   out.push({box:t,it:null,cat:ct,label:sg,ex:{sigla:sg,vazao:vz?(vz.match(VAZ_RE)[1]+' m³/h'):'',dim:dm?dm.replace(/[×X]/g,'x').replace(/\s+/g,''):''}})}}
  if(d.rooms&&d.rooms.length)for(const o of out){const b=o.r||o.box;o.room=roomOf(d,(b.x0+b.x1)/2,(b.y0+b.y1)/2)}
  return{out,items:items.length,found:used.size}}
 function hlCompute(d){
@@ -702,7 +715,7 @@ function planCad(d,cat,room){
  fresh.sort((a,b)=>(!a.room-!b.room)||(a.room&&b.room?a.room.n.localeCompare(b.room.n,'pt-BR')||a.room.A-b.room.A:0)||Object.keys(CATS).indexOf(a.cat)-Object.keys(CATS).indexOf(b.cat)||b.cy-a.cy||a.cx-b.cx);
  const used=new Set(projItens(V.p.projetoId).map(i=>String(i.campos.tag||'').toUpperCase())),cnt=new Map();
  for(const r of fresh){const pre=CATS[r.cat].s,code=r.room?roomCode(r.room.n):'SA',key=pre+'-'+code;let n=cnt.get(key)||0,tag;do{n++;tag=key+'-'+String(n).padStart(2,'0')}while(used.has(tag));cnt.set(key,n);used.add(tag);r.tag=tag;
-  const txt=r.o.box?r.o.box.s:insStrings(d,r.o.r).join('\n'),pl=prettyLabel(txt),vm=txt.match(/(\d+(?:[.,]\d+)?)\s*m\s*[³3]\s*\/\s*h/i),P=CATS[r.cat].proj,cp={tag,pavimento:V.p.pav||'',modelo:pl.title,dimensoes:pl.dims[0]?pl.dims[0].replace(/[×X]/g,'x'):'',vazao:vm?vm[1]+' m³/h':'',fabricante:/trox/i.test(txt)?'Trox':'',quantidade:'1'};
+  const txt=r.o.box?r.o.box.s:insStrings(d,r.o.r).join('\n'),pl=prettyLabel(txt),vm=txt.match(/(\d+(?:[.,]\d+)?)\s*m\s*[³3]\s*\/\s*h/i),P=CATS[r.cat].proj,cp={tag,pavimento:V.p.pav||'',modelo:r.o.ex?r.o.ex.sigla:pl.title,dimensoes:pl.dims[0]?pl.dims[0].replace(/[×X]/g,'x'):(r.o.ex?.dim||''),vazao:vm?vm[1]+' m³/h':(r.o.ex?.vazao||''),fabricante:/trox/i.test(txt)?'Trox':'',quantidade:'1'};
   if(r.room){cp.ambiente=r.room.n;cp.localizacao=r.room.n}
   r.campos={};for(const k of P)if(cp[k])r.campos[k]=cp[k]}
  return{rows,fresh,done:rows.length-fresh.length}}
@@ -772,6 +785,25 @@ ACT.cadGo=()=>{const d=docCache[V.p.id],P=V.cadPlan;if(!d||!P||!(P.pl.fresh.leng
  for(const r of (pl.leg||[]))S.itens.push({id:uid(),projetoId:V.p.projetoId,cat:r.cat,campos:r.campos,src:r.src});
  const nl=(pl.leg||[]).length;
  logH('criou','item','',`Cadastrou ${pl.fresh.length+nl} equipamento(s) a partir do desenho ${V.p.nome}`);save();closeModal();V.hl=null;viewerUpdate();toast((pl.fresh.length?pl.fresh.length+' cadastrado(s) e posicionado(s) na planta':'')+(pl.fresh.length&&nl?' · ':'')+(nl?nl+' da legenda (sem posição)':''))};
+
+async function docFor(p){if(docCache[p.id]&&docCache[p.id].prims)return docCache[p.id];
+ const blob=await blobGet(p.blobId),leanB=await blobGet(p.blobId+'_L');let B=null,pv='';
+ if(leanB){try{const r=await leanRead(leanB);B=r.B;pv=r.pav}catch(e){console.warn('lean',e)}}
+ if(!B){await ensureDxf();if(!blob)throw new Error('Arquivo da planta não encontrado');const tx=await readText(blob);B=dxfBase(tx);try{pv=detectPav(tx,[p.nome])}catch(e){}const js=leanJSON(B,pv);setTimeout(()=>leanSave(p,js),200)}
+ docCache[p.id]=dxfFinish(B,p);if(!p.pav)pavApply(p,pv);return docCache[p.id]}
+let pulling=false;
+ACT.pullAll=async()=>{if(pulling)return;const pls=S.plantas.filter(p=>p.projetoId===ui.projetoId&&p.tipo==='dxf'&&(!ui.pav||(p.pav||'Sem pavimento')===ui.pav));
+ if(!pls.length){alert('Este projeto ainda não tem planta DXF'+(ui.pav?' no pavimento '+ui.pav:'')+'. Envie em Administração › Enviar plantas.');return}
+ pulling=true;const old=V,cnt={};let nTot=0,nLeg=0,n=0;
+ try{for(const p of pls){n++;toast(`Lendo ${n}/${pls.length}: ${p.nome}…`);await new Promise(r=>setTimeout(r,30));
+   const d=await docFor(p);V={p};const pl=planCad(d,'*','');pl.leg=planLegenda(d,'*');
+   for(const r of pl.fresh){const it={id:uid(),projetoId:p.projetoId,cat:r.cat,campos:r.campos,src:r.src};S.itens.push(it);S.marcas.push({id:uid(),itemId:it.id,plantaId:p.id,pagina:ui.pagina,x:(r.cx-d.x0)/d.w,y:1-(r.cy-d.y0)/d.h});cnt[r.cat]=(cnt[r.cat]||0)+1;nTot++}
+   for(const r of pl.leg){S.itens.push({id:uid(),projetoId:p.projetoId,cat:r.cat,campos:r.campos,src:r.src});cnt[r.cat]=(cnt[r.cat]||0)+1;nLeg++;nTot++}
+   if(!old||old.p.id!==p.id)delete docCache[p.id]}
+  logH('criou','item','',`Puxou ${nTot} equipamento(s) de ${pls.length} desenho(s)`);save()}
+ catch(e){toast('Não foi possível ler o desenho: '+e.message)}
+ finally{V=old;pulling=false}
+ render();toast(nTot?`${nTot} equipamentos cadastrados: `+Object.entries(cnt).map(([k,v])=>v+' '+CATS[k].l.toLowerCase()).join(', ')+(nLeg?` (${nLeg} da legenda, sem posição)`:''):'Nada novo para cadastrar nesses desenhos.')};
 /* botão na tela de Itens: abre a planta DXF e já pergunta o que cadastrar */
 function cadWhenReady(id){let n=0;const t=setInterval(()=>{n++;const d=docCache[id];if(d&&d.prims&&V&&V.p.id===id){clearInterval(t);ACT.dxfCad()}else if(n>200)clearInterval(t)},300)}
 ACT.cadItens=()=>{const pls=S.plantas.filter(p=>p.projetoId===ui.projetoId&&p.tipo==='dxf');
@@ -999,7 +1031,7 @@ function viewItens(){
  if(!ui.projetoId){ui.view='home';return render()}
  const office=mode==='escritorio',list=filteredItens();
  $('#cfMain').innerHTML=`<div class="card"><div class="row" style="align-items:center"><h2 style="flex:3;margin:0">Itens do projeto — ${esc(proj(ui.projetoId).nome)}</h2>
-  ${office?`<button class="btn" data-act="cadItens" style="flex:none">➕ Puxar do desenho</button><button class="btn sec" data-act="newItem" style="flex:none">+ Novo item</button><button class="btn sec" data-act="csvImp" style="flex:none">⬆ Importar Excel / CSV</button><button class="btn sec" data-act="csvTpl" style="flex:none">⬇ Modelo Excel</button><button class="btn sec" data-act="qrLabels" style="flex:none">🏷 Etiquetas QR</button><input type="file" id="csvF" accept=".xlsx,.xls,.xlsm,.csv,text/csv" style="display:none">`:''}</div>
+  ${office?`<button class="btn" data-act="pullAll" style="flex:none" title="Lê todos os desenhos DXF do projeto e cadastra difusores, grelhas, dampers, fancoils, fancolete, chillers e bombas direto aqui">⚡ Puxar tudo dos desenhos</button><button class="btn sec" data-act="cadItens" style="flex:none">➕ Escolher o que puxar</button><button class="btn sec" data-act="newItem" style="flex:none">+ Novo item</button><button class="btn sec" data-act="csvImp" style="flex:none">⬆ Importar Excel / CSV</button><button class="btn sec" data-act="csvTpl" style="flex:none">⬇ Modelo Excel</button><button class="btn sec" data-act="qrLabels" style="flex:none">🏷 Etiquetas QR</button><input type="file" id="csvF" accept=".xlsx,.xls,.xlsm,.csv,text/csv" style="display:none">`:''}</div>
   <div style="margin-top:10px">${filtersHTML()}</div></div>
   <div class="card" style="padding:0;overflow:auto"><div class="grp-bar noprint"><label><input type="checkbox" data-chg="agr" ${ui.agr!==false?'checked':''}> Agrupar por ambiente</label><span class="grp-btns">${ui.agr!==false?'<button class="btn sec sm" data-act="grpAll" data-v="1">Expandir tudo</button><button class="btn sec sm" data-act="grpAll" data-v="0">Recolher tudo</button>':''}<span class="muted">${list.length} item(ns)</span></span></div><table class="tbl-it"><thead><tr><th>Status</th><th>TAG</th><th>Categoria</th><th>Modelo</th><th>Medida</th><th>Vazão</th><th>Planta(s)</th><th></th></tr></thead><tbody>
   ${(()=>{const nat=(a,b)=>String(a.campos.tag||'').localeCompare(String(b.campos.tag||''),'pt-BR',{numeric:true}),roomOf2=i=>i.campos.ambiente||i.campos.localizacao||'';
@@ -1858,12 +1890,17 @@ function pavFromStr(x){
  if(/\bPAV(?:IMENTO)?\.?\s*TIPO\b/.test(u))return 'Pavimento Tipo';
  return ''}
 function detectPav(text,nomes){
+ // 1) nome do arquivo no padrão "…-1P-…" (1P = 1º pavimento): é a convenção do escritório
+ for(const nm of nomes||[]){const m=String(nm||'').replace(/\.[^.]+$/,'').match(/(?:^|[-_ ])(\d{1,2})\s*P(?=$|[-_. ])/i);if(m&&+m[1]>0)return m[1]+'º Pavimento'}
  const cnt=new Map(),first=new Map();let n=0;
- const add=(v,w)=>{if(!v)return;cnt.set(v,(cnt.get(v)||0)+w);if(!first.has(v))first.set(v,n++)};
+ const add=(v,w)=>{if(!v||!w)return;cnt.set(v,(cnt.get(v)||0)+w);if(!first.has(v))first.set(v,n++)};
  if(text){const L=text.split(/\r?\n/);
   for(let i=0;i+1<L.length;i+=2){const c=L[i].trim();if(c!=='1'&&c!=='3')continue;
-   const v=L[i+1].replace(/\\P/g,' ').replace(/\\[A-Za-z][^;]*;/g,'').replace(/[{}]/g,'');
-   add(pavFromStr(v),/ - /.test(v)?3:1)}}
+   const v=L[i+1].replace(/\\P/g,' ').replace(/\\[A-Za-z][^;]*;/g,'').replace(/[{}]/g,'').replace(/\s+/g,' ').trim(),pv=pavFromStr(v);if(!pv)continue;
+   // nomes de famílias/objetos exportados do Revit (…-7141300-… , …-V62-… , "PARTE 1_2") não dizem o pavimento deste desenho
+   if(/-\d{5,}-|-V\d{1,4}-|\bPARTE\s*\d|GRL PA|_ PAVIMENTO|Array/i.test(v))continue;
+   const u=v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase(),curto=u.length<=14&&/^(?:\d{1,2}\s*[ºO°ª]?\s*)?(?:PAV(?:IMENTO)?\.?|ANDAR|TERREO|SUBSOLO|COBERTURA|MEZANINO)/.test(u);
+   add(pv,curto?10:/ - /.test(v)?4:1)}}
  let best='',bs=0;for(const[k,v]of cnt)if(v>bs||(v===bs&&first.get(k)<first.get(best))){best=k;bs=v}
  if(best)return best;
  for(const nm of nomes||[]){const v=pavFromStr(String(nm||'').replace(/\.[^.]+$/,'').replace(/[_]+/g,' '));if(v)return v}
