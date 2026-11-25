@@ -6,7 +6,7 @@
    ===================================================================== */
 (()=>{
 'use strict';
-const APP_VERSION='0.13.1';
+const APP_VERSION='0.14.0';
 const SCRIPT_URL=document.currentScript&&document.currentScript.src;
 
 /* ---------- Definições de campos e categorias ---------- */
@@ -24,7 +24,7 @@ const GR_EQ={proj:['tag','pavimento','fabricante','modelo','tipo','capacidade','
 const GR_FC={proj:['tag','pavimento','fabricante','modelo','tipo','capacidade','potencia','vazao','vazaoagua','corrente','tensaoeq','quadro','localizacao','outros'],conf:['fabricante','modelo','tipo','capacidade','potencia','vazao','vazaoagua','corrente','tensaoeq','quadro']};
 const CATS={
  bomba:{l:'Bomba',s:'B',...GR_EQ},chiller:{l:'Chiller',s:'CH',...GR_EQ},
- fancolete:{l:'Fancolete',s:'FCTH',...GR_FC},fancoil:{l:'Fancoil',s:'FC',...GR_FC},
+ fancolete:{l:'Fancolete',s:'FCTH',...GR_FC},fancoil:{l:'Fancoil',s:'UTA',...GR_FC},
  difusor:{l:'Difusor',s:'D',...GR_TERM},grelha:{l:'Grelha',s:'G',...GR_TERM},
  damper:{l:'Damper',s:'DP',...GR_DAMP}
 };
@@ -155,13 +155,13 @@ function fieldHTML(f){const v=f.value??'';const id='f_'+f.k;
  if(f.type==='select')inp=`<select id="${id}" ${f.chg?`data-chg="${f.chg}"`:''}>${f.options.map(o=>`<option value="${esc(o.v)}" ${o.v===v?'selected':''}>${esc(o.t)}</option>`).join('')}</select>`;
  else if(f.type==='date')inp=`<input id="${id}" type="date" value="${esc(v)}">`;
  else if(f.type==='textarea')inp=`<textarea id="${id}">${esc(v)}</textarea>`;
- else if(f.type==='file')inp=`<input id="${id}" type="file" accept="${f.accept||''}">`;
+ else if(f.type==='file')inp=`<input id="${id}" type="file" accept="${f.accept||''}" ${f.multiple?'multiple':''}>`;
  else inp=`<input id="${id}" type="text" value="${esc(v)}" ${f.list?`list="dl_${f.k}"`:''}>${f.list?`<datalist id="dl_${f.k}">${f.list.map(o=>`<option value="${esc(o)}">`).join('')}</datalist>`:''}`;
  return `<div class="fld"><label for="${id}">${esc(f.l)}</label>${inp}</div>`}
 function formModal(title,fields,onOk,okLabel){
  openModal(`<h3>${esc(title)}</h3><div id="ff">${fields.map(fieldHTML).join('')}</div><div class="mfoot"><button class="btn sec" data-act="closeModal">Cancelar</button><button class="btn" id="fok">${okLabel||'Salvar'}</button></div>`);
  setTimeout(()=>{if(!$('#ff')?.contains(document.activeElement))$('#ff input,#ff select')?.focus()},30);
- $('#fok').onclick=async()=>{const v={};fields.forEach(f=>{const e=$('#f_'+f.k);v[f.k]=f.type==='file'?e.files[0]:e.value.trim()});
+ $('#fok').onclick=async()=>{const v={};fields.forEach(f=>{const e=$('#f_'+f.k);v[f.k]=f.type==='file'?(f.multiple?[...e.files]:e.files[0]):e.value.trim()});
   if(await onOk(v)!==false)closeModal()}}
 
 /* ---------- Eventos globais ---------- */
@@ -615,18 +615,21 @@ ACT.dxfGo=b=>{const d=docCache[V.p.id],r=d.inserts[+b.dataset.i];if(!r)return;cl
 function ensureCv2(){const vp=$('#vp');if(!vp)return null;let c=$('#cv2');if(!c){c=document.createElement('canvas');c.id='cv2';c.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none';vp.insertBefore(c,vp.firstChild);$('#stage')?.classList.add('dxf')}return c}
 const normS=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
 const hlOn=()=>!!(ui.catFilter||V.q||V.room!=null||V.duct!=null);
+const DEFKW={fancoil:['uta']};
+const kwHit=(k,w)=>w.length>3?k.includes(w):new RegExp('(^|[^a-z0-9])'+w.replace(/[^a-z0-9]/g,'')+'([^a-z0-9]|$)').test(k);
 function collectEq(d,cats,qk){
  const items=projItens(V.p.projetoId).filter(i=>cats.includes(i.cat));
- const kwOf=k=>[normS(CATS[k].l),k,...((cfg().kw&&cfg().kw[k])||[]).map(normS)].filter(c=>c.length>=2);
+ const kwOf=k=>[normS(CATS[k].l),k,...(DEFKW[k]||[]),...((cfg().kw&&cfg().kw[k])||[]).map(normS)].filter(c=>c.length>=2);
  const all=[...cats.flatMap(kwOf),...(qk?[qk]:[])].filter(c=>c.length>=2);
- const catOf=str=>{const k=normS(str);return cats.find(c=>kwOf(c).some(w=>k.includes(w)))||''};
+ const catOf=str=>{const k=normS(str);return cats.find(c=>kwOf(c).some(w=>kwHit(k,w)))||''};
  const ik=items.map(i=>({i,k:tagKey(i.campos.tag)})).filter(x=>x.k.length>=2),hit=k=>ik.find(x=>k===x.k||(x.k.length>=3&&k.includes(x.k)&&k.length<=x.k.length+12));
  const out=[],used=new Set();
  d.inserts.forEach(r=>{if(r.d>0)return;const strs=insStrings(d,r);let it=null;for(const s of strs){const m=hit(tagKey(s));if(m){it=m.i;break}}
-  const byName=all.some(c=>normS(r.name).includes(c));if(it||byName){out.push({r,it,cat:it?it.cat:catOf(r.name+' '+strs.join(' ')),label:it?it.campos.tag:(strs[0]||r.name)});if(it)used.add(it.id)}});
+  const nmS=normS(r.name),byName=all.some(c=>kwHit(nmS,c));if(it||byName){out.push({r,it,cat:it?it.cat:catOf(r.name+' '+strs.join(' ')),label:it?it.campos.tag:(strs[0]||r.name)});if(it)used.add(it.id)}});
  const tu=new Set();
  for(const t of d.texts){const m=hit(tagKey(t.s));if(m&&!used.has(m.i.id)){out.push({box:t,it:m.i,cat:m.i.cat,label:m.i.campos.tag});used.add(m.i.id);tu.add(t)}}
- for(const t of d.texts){if(tu.has(t))continue;const k=normS(t.s);if(all.some(c=>k.includes(c))){const l=t.s.split('\n')[0].replace(/\s+/g,' ').trim();out.push({box:t,it:null,cat:catOf(t.s),label:l.length>26?l.slice(0,25)+'…':l})}}
+ const insOut=out.filter(o=>o.r);
+ for(const t of d.texts){if(tu.has(t))continue;{const cx=(t.x0+t.x1)/2,cy=(t.y0+t.y1)/2;if(insOut.some(o=>cx>=o.r.x0&&cx<=o.r.x1&&cy>=o.r.y0&&cy<=o.r.y1))continue}const k=normS(t.s);if(all.some(c=>kwHit(k,c))){const l=t.s.split('\n')[0].replace(/\s+/g,' ').trim();out.push({box:t,it:null,cat:catOf(t.s),label:l.length>26?l.slice(0,25)+'…':l})}}
  if(d.rooms&&d.rooms.length)for(const o of out){const b=o.r||o.box;o.room=roomOf(d,(b.x0+b.x1)/2,(b.y0+b.y1)/2)}
  return{out,items:items.length,found:used.size}}
 function hlCompute(d){
@@ -1823,7 +1826,7 @@ function adminCad(){
  ${step(1,'Projeto','O <b>projeto</b> é a disciplina dentro da obra (ex.: “Climatização”). É nele que ficam os equipamentos e as plantas.',
   `<div class="list">${li(projs,ui.projetoId,'selP','edProj','delProj',p=>projItens(p.id).length+' item(ns)')||'<div class="muted">Nenhum projeto nesta obra.</div>'}</div><div class="stp-act"><button class="btn" data-act="addProj">+ Novo projeto</button></div>`,st(1))}
  ${step(2,'Planta','A <b>planta</b> é o desenho onde os equipamentos aparecem. Aceita <b>DXF</b> (recomendado: reconhece ambientes e equipamentos), PDF ou imagem. Envie uma por pavimento.',
-  `<div class="list">${pls.map(p=>`<div class="li"><div class="grow" data-act="posPl" data-id="${p.id}"><b>${esc(p.nome)}</b><div class="muted">${esc(p.pav||'Sem pavimento')} · ${p.tipo.toUpperCase()} · ${S.marcas.filter(m=>m.plantaId===p.id).length} ponto(s) marcado(s)</div></div><button class="btn sec sm" data-act="revPl" data-id="${p.id}" title="Enviar nova revisão da planta mantendo os pontos">⟳ Revisão</button>${(p.revs||[]).length?`<button class="btn sec sm" data-act="revList" data-id="${p.id}" title="Revisões anteriores">🕘 ${esc(p.rev||'')}</button>`:''}<button class="btn sec sm" data-act="edPl" data-id="${p.id}" title="Editar">✎</button><button class="btn red sm" data-act="delPl" data-id="${p.id}" title="Excluir">🗑</button></div>`).join('')||'<div class="muted">Nenhuma planta enviada.</div>'}</div><div class="stp-act"><button class="btn" data-act="addPl">+ Enviar planta</button></div>`,st(2))}
+  `<div class="list">${[...pls].sort((a,b)=>pavSort(a.pav||'',b.pav||'')||a.nome.localeCompare(b.nome,'pt-BR')).map((p,i,arr)=>(i===0||(arr[i-1].pav||'')!==(p.pav||'')?`<h4 style="margin:10px 0 4px;color:var(--mut)">${esc(p.pav||'Sem pavimento')}</h4>`:'')+`<div class="li"><div class="grow" data-act="posPl" data-id="${p.id}"><b>${esc(p.nome)}</b><div class="muted">${esc(p.pav||'Sem pavimento')} · ${p.tipo.toUpperCase()} · ${S.marcas.filter(m=>m.plantaId===p.id).length} ponto(s) marcado(s)</div></div><button class="btn sec sm" data-act="revPl" data-id="${p.id}" title="Enviar nova revisão da planta mantendo os pontos">⟳ Revisão</button>${(p.revs||[]).length?`<button class="btn sec sm" data-act="revList" data-id="${p.id}" title="Revisões anteriores">🕘 ${esc(p.rev||'')}</button>`:''}<button class="btn sec sm" data-act="edPl" data-id="${p.id}" title="Editar">✎</button><button class="btn red sm" data-act="delPl" data-id="${p.id}" title="Excluir">🗑</button></div>`).join('')||'<div class="muted">Nenhuma planta enviada.</div>'}</div><div class="stp-act"><button class="btn" data-act="addPl">+ Enviar plantas (várias de uma vez)</button></div>`,st(2))}
  ${step(3,'Equipamentos','Cadastre o que o projeto prevê: difusores, grelhas, dampers, fancoils, bombas… Você pode <b>puxar automático do desenho DXF</b>, importar uma planilha Excel ou digitar um por um.',
   `<div class="stp-stat"><b>${its.length}</b> equipamento(s) cadastrado(s)</div><div class="stp-act">${pls.some(p=>p.tipo==='dxf')?'<button class="btn" data-act="cadItens">➕ Puxar do desenho (automático)</button>':''}<button class="btn sec" data-act="nav" data-v="itens">📋 Ver lista / importar Excel / cadastrar um</button></div>`,st(3))}
  ${step(4,'Pontos na planta','Marque na planta onde cada equipamento está. Se você usou “Puxar do desenho”, <b>os pontos já foram colocados sozinhos</b>. Equipamentos que faltarem: abra a planta e use o botão “➕ Equipamento não identificado”.',
@@ -1867,11 +1870,19 @@ function detectPav(text,nomes){
  return ''}
 function pavApply(p,v){if(!v||p.pav)return false;p.pav=v;
  S.itens.forEach(i=>{if(i.projetoId===p.projetoId&&!i.campos.pavimento&&i.src&&String(i.src).startsWith('leg:'+p.id+':'))i.campos.pavimento=v});return true}
-ACT.addPl=()=>formModal('Enviar planta',[{k:'nome',l:'Nome da planta (ex.: Climatização — 3º pavimento)'},{k:'pav',l:'Pavimento (em branco = o programa lê do desenho)',list:PAVS},{k:'disc',l:'Disciplina / categoria',list:DISCIPLINAS,value:'Climatização'},{k:'file',l:'Arquivo (PDF, DXF, PNG, JPG)',type:'file',accept:'.pdf,.dxf,image/*'}],async v=>{
- if(!v.file){toast('Selecione o arquivo da planta');return false}const tipo=fileTipo(v.file);if(!tipo){toast('Formato não suportado — use PDF, DXF, PNG ou JPG');return false}
- const p={id:uid(),projetoId:ui.projetoId,nome:v.nome||v.file.name.replace(/\.[^.]+$/,''),pav:v.pav,disc:v.disc,tipo,blobId:'pl_'+uid()};
- let auto='';if(!p.pav){try{auto=detectPav(tipo==='dxf'?await readText(v.file):'',[v.nome,v.file.name])}catch(e){}if(auto)p.pav=auto}
- await blobSet(p.blobId,v.file);if(tipo==='dxf'){toast('Otimizando a planta…');const pv=await leanFromFile(p,v.file);if(!p.pav&&pv){p.pav=pv;auto=pv}}S.plantas.push(p);logH('criou','planta',p.id,'Enviou planta '+p.nome);save();render();toast(auto?'Planta enviada · pavimento identificado: '+auto:'Planta enviada')},'Enviar');
+ACT.addPl=()=>formModal('Enviar plantas',[{k:'nome',l:'Nome da planta (só vale para 1 arquivo; vários usam o nome do arquivo)'},{k:'pav',l:'Pavimento (em branco = o programa lê de cada desenho)',list:PAVS},{k:'disc',l:'Disciplina / categoria',list:DISCIPLINAS,value:'Climatização'},{k:'files',l:'Arquivos (PDF, DXF, PNG, JPG) — pode escolher vários de uma vez',type:'file',multiple:true,accept:'.pdf,.dxf,image/*'}],async v=>{
+ const fl=v.files||[];if(!fl.length){toast('Selecione o arquivo da planta');return false}
+ const ok=fl.filter(f=>fileTipo(f));if(!ok.length){toast('Formato não suportado — use PDF, DXF, PNG ou JPG');return false}
+ const many=ok.length>1,got=[];let n=0;
+ for(const f of ok){n++;const tipo=fileTipo(f);
+  const p={id:uid(),projetoId:ui.projetoId,nome:(!many&&v.nome)||f.name.replace(/\.[^.]+$/,''),pav:v.pav,disc:v.disc,tipo,blobId:'pl_'+uid()};
+  toast(many?`Processando ${n}/${ok.length}: ${f.name}`:'Otimizando a planta…');
+  await blobSet(p.blobId,f);
+  if(tipo==='dxf'){const pv=await leanFromFile(p,f);if(!p.pav&&pv)p.pav=pv}
+  if(!p.pav){let pv='';try{pv=detectPav('',[p.nome,f.name])}catch(e){}if(pv)p.pav=pv}
+  S.plantas.push(p);logH('criou','planta',p.id,'Enviou planta '+p.nome);got.push(p)}
+ save();render();
+ toast(many?`${got.length} plantas enviadas · `+[...new Set(got.map(p=>p.pav||'sem pavimento'))].join(', '):(got[0].pav&&!v.pav?'Planta enviada · pavimento identificado: '+got[0].pav:'Planta enviada'))},'Enviar');
 ACT.edPl=b=>{const p=planta(b.dataset.id);formModal('Editar planta',[{k:'nome',l:'Nome',value:p.nome},{k:'pav',l:'Pavimento',value:p.pav,list:PAVS},{k:'disc',l:'Disciplina',value:p.disc,list:DISCIPLINAS},{k:'file',l:'Substituir arquivo (opcional)',type:'file',accept:'.pdf,.dxf,image/*'}],async v=>{
  if(v.file){const t=fileTipo(v.file);if(!t){toast('Formato não suportado');return false}await blobSet(p.blobId,v.file);p.tipo=t;p.paginas=0;delete docCache[p.id];blobDel(p.blobId+'_L');if(t==='dxf'){toast('Otimizando a planta…');await leanFromFile(p,v.file)}}
  p.nome=v.nome||p.nome;p.disc=v.disc;p.pav=v.pav;if(!p.pav&&v.file&&p.tipo==='dxf'){try{pavApply(p,detectPav(await readText(v.file),[p.nome,v.file.name]))}catch(e){}}logH('editou','planta',p.id,'Editou planta '+p.nome);save();render()})};
@@ -2017,7 +2028,7 @@ async function loadObrasFile(){
   for(const [id,c] of Object.entries(j.conf||{})){const l=S.conf[id];if(!l||(c.data||'')>(l.data||''))S.conf[id]={...c,fotos:(l&&l.fotos)||[]}}
   if(j.gerado)localStorage.setItem('orcehvac.conf.pubGer',j.gerado);
   await kvSet('state',S);pick()}catch{pick()}}
-async function ensureLoaded(){if(loaded)return true;try{const saved=await kvGet();if(saved)S={...S,...saved};S.cfg=S.cfg||{};S.del=S.del||{};S.usuarios=S.usuarios||[];(S.itens||[]).forEach(i=>{if(i.cat==='fancolete'&&/^FL-\d+$/i.test(String(i.campos?.tag||'')))i.campos.tag=i.campos.tag.replace(/^FL/i,'FCTH')});resetSigs();loaded=true;await loadUserFile();await loadModelFile();await loadObrasFile();initSync();return true}catch(e){toast('Não foi possível ler os dados do comissionamento: '+e.message);return false}}
+async function ensureLoaded(){if(loaded)return true;try{const saved=await kvGet();if(saved)S={...S,...saved};S.cfg=S.cfg||{};S.del=S.del||{};S.usuarios=S.usuarios||[];(S.itens||[]).forEach(i=>{if(i.cat==='fancolete'&&/^FL-\d+$/i.test(String(i.campos?.tag||'')))i.campos.tag=i.campos.tag.replace(/^FL/i,'FCTH');if(i.cat==='fancoil'&&/^FC-\d+$/i.test(String(i.campos?.tag||'')))i.campos.tag=i.campos.tag.replace(/^FC/i,'UTA')});resetSigs();loaded=true;await loadUserFile();await loadModelFile();await loadObrasFile();initSync();return true}catch(e){toast('Não foi possível ler os dados do comissionamento: '+e.message);return false}}
 function mount(){
  const c=document.getElementById('content');root=document.createElement('div');root.className='cf';
  root.innerHTML='<section class="heading" id="cfHead"></section><nav class="module-tabs" id="cfNav"></nav><div id="cfKpi"></div><div id="cfMain"></div><div id="cfModal"></div>';
